@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:seoul-schools": "node scripts/generate-seoul-schools-json.mjs"
   },
   "dependencies": {
     "next": "16.1.1",
