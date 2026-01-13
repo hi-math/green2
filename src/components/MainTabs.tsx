@@ -11,7 +11,7 @@ export function MainTabs() {
   return (
     <div className="w-full">
       <div className="border-b border-slate-200">
-        <div className="flex items-center gap-10">
+        <div className="flex items-center gap-8">
           <TabButton
             active={tab === "basic"}
             onClick={() => setTab("basic")}
@@ -27,20 +27,18 @@ export function MainTabs() {
         </div>
       </div>
 
-      <div className="mt-6 min-h-[520px]">
+      <div className="mt-6">
         {tab === "basic" ? (
-          <BasicInfoForm />
+          <BasicInfoForm onNext={() => setTab("emissions")} />
         ) : (
-          <div className="text-sm text-zinc-600">
-            탄소 배출 정보 입력 영역(추가 예정)
-          </div>
+          <EmissionsForm />
         )}
       </div>
     </div>
   );
 }
 
-function BasicInfoForm() {
+function BasicInfoForm({ onNext }: { onNext: () => void }) {
   const [form, setForm] = useState({
     schoolName: "",
     classCount: "",
@@ -51,6 +49,30 @@ function BasicInfoForm() {
     heatingTempC: "",
     solarAnnualKwh: "",
   });
+
+  const [missingOpen, setMissingOpen] = useState(false);
+  const [missingLabels, setMissingLabels] = useState<string[]>([]);
+
+  function validateAndNext() {
+    const missing: string[] = [];
+
+    if (!form.schoolName.trim()) missing.push("학교명");
+    if (!form.classCount.trim()) missing.push("학급 수");
+    if (!form.studentCount.trim()) missing.push("학생 수");
+    if (!form.staffCount.trim()) missing.push("교직원 수");
+    if (!form.schoolAreaM2.trim()) missing.push("학교 면적");
+    if (!form.coolingTempC.trim()) missing.push("냉방 온도 설정");
+    if (!form.heatingTempC.trim()) missing.push("난방 온도 설정");
+    if (!form.solarAnnualKwh.trim()) missing.push("태양광 연간 발전량");
+
+    if (missing.length > 0) {
+      setMissingLabels(missing);
+      setMissingOpen(true);
+      return;
+    }
+
+    onNext();
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
@@ -130,6 +152,161 @@ function BasicInfoForm() {
           />
         </div>
       </div>
+
+      <div className="mt-6 flex justify-end">
+        <button
+          type="button"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+          onClick={validateAndNext}
+        >
+          다음으로
+        </button>
+      </div>
+
+      {missingOpen ? (
+        <Modal
+          title="내용을 모두 입력하세요."
+          onClose={() => setMissingOpen(false)}
+        >
+          <div className="text-sm text-[color:rgba(75,70,41,0.8)]">
+            <div className="mt-3 flex flex-wrap gap-2">
+              {missingLabels.map((label) => (
+                <div
+                  key={label}
+                  className="inline-flex items-center rounded-full bg-[color:rgba(185,213,50,0.25)] px-3 py-1 text-xs font-extrabold text-[var(--brand-b)] shadow-sm"
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="text-center text-base font-extrabold text-[var(--brand-b)]">
+          {title}
+        </div>
+        <div className="mt-3">{children}</div>
+
+        <div className="mt-5 flex justify-center">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+            onClick={onClose}
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmissionsForm() {
+  const year = new Date().getFullYear() - 1;
+  const [form, setForm] = useState({
+    electricWon: "",
+    gasWon: "",
+    waterWon: "",
+    copyPaperWon: "",
+    disposableWon: "",
+    wasteWon: "",
+  });
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="space-y-3">
+          <FieldRow
+            label={`${year}년 전기요금 총액`}
+            placeholder=""
+            unit="원"
+            maxWidthClass="max-w-[180px]"
+            gridClassName="grid-cols-[260px_1fr]"
+            labelClassName="whitespace-nowrap"
+            value={form.electricWon}
+            onChange={(v) => setForm((s) => ({ ...s, electricWon: v }))}
+            inputMode="numeric"
+          />
+          <FieldRow
+            label={`${year}년 가스요금 총액`}
+            placeholder=""
+            unit="원"
+            maxWidthClass="max-w-[180px]"
+            gridClassName="grid-cols-[260px_1fr]"
+            labelClassName="whitespace-nowrap"
+            value={form.gasWon}
+            onChange={(v) => setForm((s) => ({ ...s, gasWon: v }))}
+            inputMode="numeric"
+          />
+          <FieldRow
+            label={`${year}년 수도요금 총액`}
+            placeholder=""
+            unit="원"
+            maxWidthClass="max-w-[180px]"
+            gridClassName="grid-cols-[260px_1fr]"
+            labelClassName="whitespace-nowrap"
+            value={form.waterWon}
+            onChange={(v) => setForm((s) => ({ ...s, waterWon: v }))}
+            inputMode="numeric"
+          />
+        </div>
+
+        <div className="space-y-3">
+          <FieldRow
+            label={`${year}년 복사용지 구입비 총액`}
+            placeholder=""
+            unit="원"
+            maxWidthClass="max-w-[180px]"
+            gridClassName="grid-cols-[260px_1fr]"
+            labelClassName="whitespace-nowrap"
+            value={form.copyPaperWon}
+            onChange={(v) => setForm((s) => ({ ...s, copyPaperWon: v }))}
+            inputMode="numeric"
+          />
+          <FieldRow
+            label={`${year}년 일회용품 구입비 총액`}
+            placeholder=""
+            unit="원"
+            maxWidthClass="max-w-[180px]"
+            gridClassName="grid-cols-[260px_1fr]"
+            labelClassName="whitespace-nowrap"
+            value={form.disposableWon}
+            onChange={(v) => setForm((s) => ({ ...s, disposableWon: v }))}
+            inputMode="numeric"
+          />
+          <FieldRow
+            label={`${year}년 폐기물 처리비 총액`}
+            placeholder=""
+            unit="원"
+            maxWidthClass="max-w-[180px]"
+            gridClassName="grid-cols-[260px_1fr]"
+            labelClassName="whitespace-nowrap"
+            value={form.wasteWon}
+            onChange={(v) => setForm((s) => ({ ...s, wasteWon: v }))}
+            inputMode="numeric"
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -196,7 +373,7 @@ function SchoolNameRow({
             setTimeout(() => setOpen(false), 120);
           }}
           className={[
-            "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-right text-sm text-[var(--brand-b)] focus:border-[color:rgba(185,213,50,0.7)] focus:outline-none focus:ring-2 focus:ring-[color:rgba(185,213,50,0.25)]",
+            "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-left text-sm text-[var(--brand-b)] focus:border-[color:rgba(185,213,50,0.7)] focus:outline-none focus:ring-2 focus:ring-[color:rgba(185,213,50,0.25)]",
             maxWidthClass ?? "",
           ].join(" ")}
         />
@@ -231,6 +408,8 @@ function FieldRow({
   placeholder,
   unit,
   maxWidthClass,
+  gridClassName,
+  labelClassName,
   value,
   onChange,
   inputMode,
@@ -239,13 +418,20 @@ function FieldRow({
   placeholder: string;
   unit?: string;
   maxWidthClass?: string;
+  gridClassName?: string;
+  labelClassName?: string;
   value: string;
   onChange: (value: string) => void;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 }) {
   return (
-    <div className="grid grid-cols-[160px_1fr] items-center gap-3">
-      <div className="inline-flex h-10 items-center justify-center rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 text-center text-sm font-extrabold text-[var(--brand-b)]">
+    <div className={["grid items-center gap-3", gridClassName ?? "grid-cols-[160px_1fr]"].join(" ")}>
+      <div
+        className={[
+          "inline-flex h-10 items-center justify-center rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 text-center text-sm font-extrabold text-[var(--brand-b)]",
+          labelClassName ?? "",
+        ].join(" ")}
+      >
         {label}
       </div>
       <div className="flex items-center gap-2">
@@ -284,7 +470,8 @@ function TabButton({
     <button
       type="button"
       className={[
-        "relative -mb-px inline-flex h-16 items-center gap-4 px-2 text-lg font-extrabold transition-colors",
+        // ~30% smaller than previous
+        "relative -mb-px inline-flex h-11 items-center gap-3 px-1.5 text-base font-extrabold transition-colors",
         active
           ? "text-[var(--brand-b)]"
           : "text-[color:rgba(75,70,41,0.55)] hover:text-[var(--brand-b)]",
@@ -293,13 +480,13 @@ function TabButton({
     >
       <span
         className={[
-          "inline-flex h-14 w-14 items-center justify-center rounded-2xl border",
+          "inline-flex h-10 w-10 items-center justify-center rounded-xl border",
           active
             ? "border-[color:rgba(185,213,50,0.45)] bg-[color:rgba(185,213,50,0.22)] text-[var(--brand-b)]"
             : "border-slate-200 bg-white text-[color:rgba(75,70,41,0.55)]",
         ].join(" ")}
       >
-        <span className="[&>svg]:h-6 [&>svg]:w-6">{icon}</span>
+        <span className="[&>svg]:h-5 [&>svg]:w-5">{icon}</span>
       </span>
       <span>{label}</span>
       <span

@@ -68,7 +68,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
       {/* Main layout */}
       <main className="mt-6 w-full px-4 pb-16 md:px-6 2xl:px-8">
-        <section className="min-h-[640px]">{children}</section>
+        <section>{children}</section>
       </main>
     </div>
   );
