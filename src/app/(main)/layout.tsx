@@ -27,7 +27,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   );
 
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem(LOGIN_FLAG_KEY) === "1";
+    const isLoggedIn = sessionStorage.getItem(LOGIN_FLAG_KEY) === "1";
     if (!isLoggedIn) {
       router.replace("/login");
       return;
@@ -57,11 +57,18 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           </button>
 
           <div className="w-full">
-            <Stepper
-              steps={["01", "02", "03", "04"]}
-              currentStep={currentStep}
-              onStepClick={(step) => router.push(`/${step}`)}
-            />
+            <div className="mx-auto w-[60%]">
+              <Stepper
+                steps={[
+                  "1단계\n학교 정보 입력",
+                  "2단계\n우리학교 현황 입력",
+                  "3단계\n우리학교 실천 현황 확인",
+                  "4단계\n우리학교 실천 과제 선정",
+                ]}
+                currentStep={currentStep}
+                onStepClick={(step) => router.push(`/${step}`)}
+              />
+            </div>
           </div>
         </div>
       </header>

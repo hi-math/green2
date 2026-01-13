@@ -5,7 +5,7 @@ export default function Page1() {
     <div className="pt-4 pl-6">
       <div className="mb-10 flex items-center gap-5">
         <div className="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
-          학교정보 입력
+          학교 정보 입력
         </div>
         <div
           className="h-10 w-px bg-[color:rgba(75,70,41,0.35)]"
