@@ -22,7 +22,7 @@ export default function Page1() {
           </span>
         </div>
       </div>
-      <MainTabs />
+      <MainTabs showNext />
     </div>
   );
 }

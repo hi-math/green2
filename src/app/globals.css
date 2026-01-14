@@ -15,6 +15,7 @@
   --brand-a: #b9d532;
   --brand-b: #4b4629;
   --font-brand: "Jalnan";
+  --ui-scale: 1.5;
 }
 
 @theme inline {
@@ -29,4 +30,14 @@ body {
   color: var(--foreground);
   font-family: var(--font-brand), var(--font-geist-sans), Arial, Helvetica,
     sans-serif;
+  zoom: var(--ui-scale);
+}
+
+/* Fallback for browsers that don't support zoom */
+@supports not (zoom: 1) {
+  body {
+    transform: scale(1.5);
+    transform-origin: top left;
+    width: calc(100% / 1.5);
+  }
 }

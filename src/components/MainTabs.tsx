@@ -1,68 +1,200 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-type TabKey = "basic" | "emissions";
+type BasicFormState = {
+  schoolName: string;
+  schoolLevel: string; // e.g. 초등/중등/고등/특수/그외/각종
+  region: string; // e.g. 강남구
+  office: string; // 교육지원청
+  classCount: string;
+  studentCount: string;
+  staffCount: string;
+  schoolAreaM2: string;
+};
 
-export function MainTabs() {
-  const [tab, setTab] = useState<TabKey>("basic");
+type EmissionsFormState = {
+  electricWon: string;
+  gasWon: string;
+  waterWon: string;
+  solarAnnualKwh: string;
+};
+
+const STEP1_STORAGE_KEY = "carbonapp.step1";
+
+function loadStep1FromSession(): {
+  basic?: BasicFormState;
+  emissions?: EmissionsFormState;
+} {
+  try {
+    const raw = sessionStorage.getItem(STEP1_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as {
+      basic?: BasicFormState;
+      emissions?: EmissionsFormState;
+    };
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
+export function MainTabs({ showNext = false }: { showNext?: boolean }) {
+  const initial = typeof window === "undefined" ? {} : loadStep1FromSession();
+  const [basic, setBasic] = useState<BasicFormState>({
+    schoolName: initial.basic?.schoolName ?? "",
+    schoolLevel: initial.basic?.schoolLevel ?? "",
+    region: initial.basic?.region ?? "",
+    office: initial.basic?.office ?? "",
+    classCount: initial.basic?.classCount ?? "",
+    studentCount: initial.basic?.studentCount ?? "",
+    staffCount: initial.basic?.staffCount ?? "",
+    schoolAreaM2: initial.basic?.schoolAreaM2 ?? "",
+  });
+  const [emissions, setEmissions] = useState<EmissionsFormState>({
+    electricWon: initial.emissions?.electricWon ?? "",
+    gasWon: initial.emissions?.gasWon ?? "",
+    waterWon: initial.emissions?.waterWon ?? "",
+    solarAnnualKwh: initial.emissions?.solarAnnualKwh ?? "",
+  });
 
   return (
     <div className="w-full">
-      <div className="border-b border-slate-200">
-        <div className="flex items-center gap-8">
-          <TabButton
-            active={tab === "basic"}
-            onClick={() => setTab("basic")}
-            icon={<DocIcon />}
-            label="기본 정보"
-          />
-          <TabButton
-            active={tab === "emissions"}
-            onClick={() => setTab("emissions")}
-            icon={<ChartIcon />}
-            label="탄소 배출 정보"
-          />
-        </div>
-      </div>
-
-      <div className="mt-6">
-        {tab === "basic" ? (
-          <BasicInfoForm onNext={() => setTab("emissions")} />
-        ) : (
-          <EmissionsForm />
-        )}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <BasicInfoForm form={basic} setForm={setBasic} />
+        <EmissionsForm
+          showNext={showNext}
+          basicForm={basic}
+          form={emissions}
+          setForm={setEmissions}
+        />
       </div>
     </div>
   );
 }
 
-function BasicInfoForm({ onNext }: { onNext: () => void }) {
-  const [form, setForm] = useState({
-    schoolName: "",
-    classCount: "",
-    studentCount: "",
-    staffCount: "",
-    schoolAreaM2: "",
-    coolingTempC: "",
-    heatingTempC: "",
-    solarAnnualKwh: "",
-  });
+function BasicInfoForm({
+  form,
+  setForm,
+}: {
+  form: BasicFormState;
+  setForm: React.Dispatch<React.SetStateAction<BasicFormState>>;
+}) {
+  const [schoolinfoLoading, setSchoolinfoLoading] = useState(false);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 text-sm font-extrabold text-[var(--brand-b)]">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white">
+            <DocIcon />
+          </span>
+          기본 정보
+        </div>
+      </div>
+
+      {/* single column (requested) */}
+      <div className="space-y-3">
+        <SchoolNameRow
+          label="학교명"
+          maxWidthClass="max-w-[300px]"
+          value={form.schoolName}
+          onChange={(v) => setForm((s) => ({ ...s, schoolName: v }))}
+          onPicked={async (picked) => {
+            setForm((s) => ({
+              ...s,
+              schoolName: picked.name,
+              schoolLevel: picked.level,
+              region: picked.region,
+              office: picked.office,
+            }));
+
+            // OpenAPI로 기본정보를 조회해서(추후) placeholder/value 자동입력에 활용
+            try {
+              setSchoolinfoLoading(true);
+              await fetch(
+                `/api/schoolinfo/basic?name=${encodeURIComponent(picked.name)}&region=${encodeURIComponent(picked.region)}&level=${encodeURIComponent(picked.level)}`,
+              );
+            } finally {
+              setSchoolinfoLoading(false);
+            }
+          }}
+        />
+        {schoolinfoLoading ? (
+          <div className="text-[11px] text-[color:rgba(75,70,41,0.6)]">
+            학교알리미 OpenAPI에서 정보를 불러오는 중...
+          </div>
+        ) : null}
+        <FieldRow
+          label="학급 수"
+          placeholder=""
+          unit="학급"
+          maxWidthClass="max-w-[120px]"
+          value={form.classCount}
+          onChange={(v) => setForm((s) => ({ ...s, classCount: v }))}
+          inputMode="numeric"
+        />
+        <FieldRow
+          label="학생 수"
+          placeholder=""
+          unit="명"
+          maxWidthClass="max-w-[120px]"
+          value={form.studentCount}
+          onChange={(v) => setForm((s) => ({ ...s, studentCount: v }))}
+          inputMode="numeric"
+        />
+        <FieldRow
+          label="교직원 수"
+          placeholder=""
+          unit="명"
+          maxWidthClass="max-w-[120px]"
+          value={form.staffCount}
+          onChange={(v) => setForm((s) => ({ ...s, staffCount: v }))}
+          inputMode="numeric"
+        />
+        <FieldRow
+          label="학교 면적"
+          placeholder=""
+          unit="m²"
+          maxWidthClass="max-w-[120px]"
+          value={form.schoolAreaM2}
+          onChange={(v) => setForm((s) => ({ ...s, schoolAreaM2: v }))}
+          inputMode="decimal"
+        />
+      </div>
+    </div>
+  );
+}
+
+function EmissionsForm({
+  showNext,
+  basicForm,
+  form,
+  setForm,
+}: {
+  showNext: boolean;
+  basicForm: BasicFormState;
+  form: EmissionsFormState;
+  setForm: React.Dispatch<React.SetStateAction<EmissionsFormState>>;
+}) {
+  const router = useRouter();
 
   const [missingOpen, setMissingOpen] = useState(false);
   const [missingLabels, setMissingLabels] = useState<string[]>([]);
 
   function validateAndNext() {
     const missing: string[] = [];
+    if (!basicForm.schoolName.trim()) missing.push("학교명");
+    if (!basicForm.classCount.trim()) missing.push("학급 수");
+    if (!basicForm.studentCount.trim()) missing.push("학생 수");
+    if (!basicForm.staffCount.trim()) missing.push("교직원 수");
+    if (!basicForm.schoolAreaM2.trim()) missing.push("학교 면적");
 
-    if (!form.schoolName.trim()) missing.push("학교명");
-    if (!form.classCount.trim()) missing.push("학급 수");
-    if (!form.studentCount.trim()) missing.push("학생 수");
-    if (!form.staffCount.trim()) missing.push("교직원 수");
-    if (!form.schoolAreaM2.trim()) missing.push("학교 면적");
-    if (!form.coolingTempC.trim()) missing.push("냉방 온도 설정");
-    if (!form.heatingTempC.trim()) missing.push("난방 온도 설정");
+    if (!form.electricWon.trim()) missing.push("전기요금 총액");
+    if (!form.gasWon.trim()) missing.push("가스요금 총액");
+    if (!form.waterWon.trim()) missing.push("수도요금 총액");
     if (!form.solarAnnualKwh.trim()) missing.push("태양광 연간 발전량");
 
     if (missing.length > 0) {
@@ -71,97 +203,86 @@ function BasicInfoForm({ onNext }: { onNext: () => void }) {
       return;
     }
 
-    onNext();
+    sessionStorage.setItem(
+      STEP1_STORAGE_KEY,
+      JSON.stringify({
+        basic: basicForm,
+        emissions: form,
+        savedAt: new Date().toISOString(),
+      }),
+    );
+    router.push("/2");
   }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-3">
-          <SchoolNameRow
-            label="학교명"
-            maxWidthClass="max-w-[300px]"
-            value={form.schoolName}
-            onChange={(v) => setForm((s) => ({ ...s, schoolName: v }))}
-          />
-          <FieldRow
-            label="학급 수"
-            placeholder=""
-            unit="학급"
-            maxWidthClass="max-w-[120px]"
-            value={form.classCount}
-            onChange={(v) => setForm((s) => ({ ...s, classCount: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label="학생 수"
-            placeholder=""
-            unit="명"
-            maxWidthClass="max-w-[120px]"
-            value={form.studentCount}
-            onChange={(v) => setForm((s) => ({ ...s, studentCount: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label="교직원 수"
-            placeholder=""
-            unit="명"
-            maxWidthClass="max-w-[120px]"
-            value={form.staffCount}
-            onChange={(v) => setForm((s) => ({ ...s, staffCount: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label="학교 면적"
-            placeholder=""
-            unit="m²"
-            maxWidthClass="max-w-[120px]"
-            value={form.schoolAreaM2}
-            onChange={(v) => setForm((s) => ({ ...s, schoolAreaM2: v }))}
-            inputMode="decimal"
-          />
-        </div>
-
-        <div className="space-y-3">
-          <FieldRow
-            label="냉방 온도 설정"
-            placeholder=""
-            unit="℃"
-            maxWidthClass="max-w-[120px]"
-            value={form.coolingTempC}
-            onChange={(v) => setForm((s) => ({ ...s, coolingTempC: v }))}
-            inputMode="decimal"
-          />
-          <FieldRow
-            label="난방 온도 설정"
-            placeholder=""
-            unit="℃"
-            maxWidthClass="max-w-[120px]"
-            value={form.heatingTempC}
-            onChange={(v) => setForm((s) => ({ ...s, heatingTempC: v }))}
-            inputMode="decimal"
-          />
-          <FieldRow
-            label="태양광 연간 발전량"
-            placeholder=""
-            unit="kWh"
-            maxWidthClass="max-w-[120px]"
-            value={form.solarAnnualKwh}
-            onChange={(v) => setForm((s) => ({ ...s, solarAnnualKwh: v }))}
-            inputMode="decimal"
-          />
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 text-sm font-extrabold text-[var(--brand-b)]">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white">
+            <ChartIcon />
+          </span>
+          탄소 배출 정보
         </div>
       </div>
 
-      <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
-          onClick={validateAndNext}
-        >
-          다음으로
-        </button>
+      <div className="space-y-3">
+        <FieldRow
+          label="전기요금 총액"
+          placeholder=""
+          unit="원"
+          maxWidthClass="max-w-[180px]"
+          gridClassName="grid-cols-[220px_1fr]"
+          labelClassName="whitespace-nowrap"
+          value={form.electricWon}
+          onChange={(v) => setForm((s) => ({ ...s, electricWon: v }))}
+          inputMode="numeric"
+        />
+        <FieldRow
+          label="가스요금 총액"
+          placeholder=""
+          unit="원"
+          maxWidthClass="max-w-[180px]"
+          gridClassName="grid-cols-[220px_1fr]"
+          labelClassName="whitespace-nowrap"
+          value={form.gasWon}
+          onChange={(v) => setForm((s) => ({ ...s, gasWon: v }))}
+          inputMode="numeric"
+        />
+        <FieldRow
+          label="수도요금 총액"
+          placeholder=""
+          unit="원"
+          maxWidthClass="max-w-[180px]"
+          gridClassName="grid-cols-[220px_1fr]"
+          labelClassName="whitespace-nowrap"
+          value={form.waterWon}
+          onChange={(v) => setForm((s) => ({ ...s, waterWon: v }))}
+          inputMode="numeric"
+        />
+        <FieldRow
+          label="태양광 연간 발전량"
+          placeholder=""
+          unit="kWh"
+          maxWidthClass="max-w-[180px]"
+          gridClassName="grid-cols-[220px_1fr]"
+          labelClassName="whitespace-nowrap"
+          value={form.solarAnnualKwh}
+          onChange={(v) => setForm((s) => ({ ...s, solarAnnualKwh: v }))}
+          inputMode="decimal"
+        />
       </div>
+
+      {showNext ? (
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+            onClick={validateAndNext}
+          >
+            다음으로
+          </button>
+        </div>
+      ) : null}
 
       {missingOpen ? (
         <Modal
@@ -221,106 +342,23 @@ function Modal({
   );
 }
 
-function EmissionsForm() {
-  const year = new Date().getFullYear() - 1;
-  const [form, setForm] = useState({
-    electricWon: "",
-    gasWon: "",
-    waterWon: "",
-    copyPaperWon: "",
-    disposableWon: "",
-    wasteWon: "",
-  });
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-3">
-          <FieldRow
-            label={`${year}년 전기요금 총액`}
-            placeholder=""
-            unit="원"
-            maxWidthClass="max-w-[180px]"
-            gridClassName="grid-cols-[260px_1fr]"
-            labelClassName="whitespace-nowrap"
-            value={form.electricWon}
-            onChange={(v) => setForm((s) => ({ ...s, electricWon: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label={`${year}년 가스요금 총액`}
-            placeholder=""
-            unit="원"
-            maxWidthClass="max-w-[180px]"
-            gridClassName="grid-cols-[260px_1fr]"
-            labelClassName="whitespace-nowrap"
-            value={form.gasWon}
-            onChange={(v) => setForm((s) => ({ ...s, gasWon: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label={`${year}년 수도요금 총액`}
-            placeholder=""
-            unit="원"
-            maxWidthClass="max-w-[180px]"
-            gridClassName="grid-cols-[260px_1fr]"
-            labelClassName="whitespace-nowrap"
-            value={form.waterWon}
-            onChange={(v) => setForm((s) => ({ ...s, waterWon: v }))}
-            inputMode="numeric"
-          />
-        </div>
-
-        <div className="space-y-3">
-          <FieldRow
-            label={`${year}년 복사용지 구입비 총액`}
-            placeholder=""
-            unit="원"
-            maxWidthClass="max-w-[180px]"
-            gridClassName="grid-cols-[260px_1fr]"
-            labelClassName="whitespace-nowrap"
-            value={form.copyPaperWon}
-            onChange={(v) => setForm((s) => ({ ...s, copyPaperWon: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label={`${year}년 일회용품 구입비 총액`}
-            placeholder=""
-            unit="원"
-            maxWidthClass="max-w-[180px]"
-            gridClassName="grid-cols-[260px_1fr]"
-            labelClassName="whitespace-nowrap"
-            value={form.disposableWon}
-            onChange={(v) => setForm((s) => ({ ...s, disposableWon: v }))}
-            inputMode="numeric"
-          />
-          <FieldRow
-            label={`${year}년 폐기물 처리비 총액`}
-            placeholder=""
-            unit="원"
-            maxWidthClass="max-w-[180px]"
-            gridClassName="grid-cols-[260px_1fr]"
-            labelClassName="whitespace-nowrap"
-            value={form.wasteWon}
-            onChange={(v) => setForm((s) => ({ ...s, wasteWon: v }))}
-            inputMode="numeric"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SchoolNameRow({
   label,
   value,
   onChange,
   maxWidthClass,
+  onPicked,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   maxWidthClass?: string;
+  onPicked?: (picked: {
+    name: string;
+    level: string;
+    region: string;
+    office: string;
+  }) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<
@@ -385,7 +423,10 @@ function SchoolNameRow({
                 key={`${it.name}-${it.level}-${it.region}-${it.office}`}
                 type="button"
                 className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50"
-                onClick={() => onChange(it.name)}
+                onClick={() => {
+                  onChange(it.name);
+                  onPicked?.(it);
+                }}
               >
                 <span className="text-sm font-extrabold text-[var(--brand-b)]">
                   {it.name}
@@ -452,50 +493,6 @@ function FieldRow({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      className={[
-        // ~30% smaller than previous
-        "relative -mb-px inline-flex h-11 items-center gap-3 px-1.5 text-base font-extrabold transition-colors",
-        active
-          ? "text-[var(--brand-b)]"
-          : "text-[color:rgba(75,70,41,0.55)] hover:text-[var(--brand-b)]",
-      ].join(" ")}
-      onClick={onClick}
-    >
-      <span
-        className={[
-          "inline-flex h-10 w-10 items-center justify-center rounded-xl border",
-          active
-            ? "border-[color:rgba(185,213,50,0.45)] bg-[color:rgba(185,213,50,0.22)] text-[var(--brand-b)]"
-            : "border-slate-200 bg-white text-[color:rgba(75,70,41,0.55)]",
-        ].join(" ")}
-      >
-        <span className="[&>svg]:h-5 [&>svg]:w-5">{icon}</span>
-      </span>
-      <span>{label}</span>
-      <span
-        className={[
-          "absolute bottom-0 left-0 right-0 h-1 rounded-t",
-          active ? "bg-[var(--brand-a)]" : "bg-transparent",
-        ].join(" ")}
-      />
-    </button>
   );
 }
 
