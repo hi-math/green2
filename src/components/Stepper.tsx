@@ -15,7 +15,7 @@ function SoilSproutIcon({ showLeaves }: { showLeaves: boolean }) {
       src={src}
       alt=""
       aria-hidden="true"
-      className="h-8 w-8 select-none"
+      className="h-6 w-6 select-none"
       draggable={false}
     />
   );
@@ -26,9 +26,9 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
     <div className="w-full">
       <div className="relative mx-auto w-full">
         {/* connector line */}
-        <div className="absolute left-0 right-0 top-3 h-[2px] rounded-full bg-slate-200" />
+        <div className="absolute left-0 right-0 top-[14px] h-[2px] rounded-full bg-slate-200" />
         <div
-          className="absolute left-0 top-3 h-[2px] rounded-full bg-[var(--brand-a)]"
+          className="absolute left-0 top-[14px] h-[2px] rounded-full bg-[var(--brand-a)]"
           style={{
             width:
               steps.length <= 1
@@ -37,7 +37,8 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
           }}
         />
 
-        <div className="relative z-10 flex w-full items-start justify-between">
+        {/* circles are inset so the connector line protrudes on both ends (balanced like the mock) */}
+        <div className="relative z-10 flex w-full items-start justify-between px-6">
           {steps.map((label, idx) => {
           const stepNum = idx + 1;
           const isCurrent = stepNum === currentStep;
@@ -50,7 +51,8 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
                 type="button"
                 aria-current={isCurrent ? "step" : undefined}
                 className={[
-                  "relative flex h-9 w-9 items-center justify-center rounded-full border transition",
+                  // circle ~20% smaller (9 -> 7)
+                  "relative flex h-7 w-7 items-center justify-center rounded-full border transition",
                   onStepClick ? "cursor-pointer hover:-translate-y-[1px]" : "",
                   isCurrent
                     ? "border-[color:rgba(75,70,41,0.35)] bg-white ring-2 ring-[var(--brand-b)]"

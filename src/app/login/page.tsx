@@ -8,7 +8,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-6 font-sans text-slate-900">
+    <div className="flex min-h-[calc(100vh/var(--ui-scale))] items-center justify-center bg-white px-6 font-sans text-slate-900">
       <div className="w-full max-w-sm">
         <h1 className="text-center text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
           로그인 페이지

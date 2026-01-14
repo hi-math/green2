@@ -38,11 +38,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   if (!isReady) return null;
 
   return (
-    <div className="min-h-screen bg-transparent font-sans text-slate-900">
+    <div className="flex h-[calc(100vh/var(--ui-scale))] flex-col overflow-hidden bg-transparent font-sans text-slate-900">
       {/* Top bar */}
-      <header className="w-full border-b border-slate-200/70 bg-white/80 backdrop-blur">
+      <header className="w-full shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur">
         <div className="h-1 w-full bg-gradient-to-r from-[var(--brand-a)] to-[var(--brand-b)]" />
-        <div className="grid w-full grid-cols-[240px_1fr] items-center gap-5 px-4 py-3 md:px-6 2xl:px-8">
+        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[240px_1fr] items-center gap-5 px-4 py-3">
           <button
             type="button"
             className="flex h-20 w-full items-center"
@@ -74,8 +74,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       </header>
 
       {/* Main layout */}
-      <main className="mt-6 w-full px-4 pb-16 md:px-6 2xl:px-8">
-        <section>{children}</section>
+      <main className="no-scrollbar w-full flex-1 overflow-auto px-4 py-3">
+        <section className="mx-auto h-full max-w-[1200px] min-h-0">{children}</section>
       </main>
     </div>
   );

@@ -15,6 +15,7 @@
   --brand-a: #b9d532;
   --brand-b: #4b4629;
   --font-brand: "Jalnan";
+  /* UI 컴포넌트 확대 (사용자 모니터 150% 환경 대응) */
   --ui-scale: 1.5;
 }
 
@@ -30,14 +31,28 @@ body {
   color: var(--foreground);
   font-family: var(--font-brand), var(--font-geist-sans), Arial, Helvetica,
     sans-serif;
-  zoom: var(--ui-scale);
+  overflow: hidden;
+  /* 브라우저별 zoom 지원 편차가 있어 transform 기반으로 강제 스케일 적용 */
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  /* 스케일 적용 시 100vh가 같이 커지며 하단 여백/스크롤이 생기는 것을 방지 */
+  height: calc(100vh / var(--ui-scale));
+  width: calc(100vw / var(--ui-scale));
 }
 
-/* Fallback for browsers that don't support zoom */
-@supports not (zoom: 1) {
-  body {
-    transform: scale(1.5);
-    transform-origin: top left;
-    width: calc(100% / 1.5);
-  }
+html,
+body {
+  height: 100%;
 }
+
+/* Hide scrollbars but keep scrolling if needed (for inner containers) */
+.no-scrollbar::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* (transform 기반으로 통일했으므로 zoom fallback 불필요) */

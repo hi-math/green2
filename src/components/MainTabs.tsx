@@ -82,7 +82,7 @@ export function MainTabs({ showNext = false }: { showNext?: boolean }) {
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <BasicInfoForm
           form={basic}
           setForm={setBasic}
@@ -145,7 +145,7 @@ function BasicInfoForm({
       </div>
 
       {/* single column (requested) */}
-      <div className="space-y-3">
+      <div className="space-y-4">
         <SchoolNameRow
           label="학교명"
           maxWidthClass="max-w-[300px]"
@@ -387,7 +387,7 @@ function EmissionsForm({
         ) : null}
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <FieldRow
           label="전기사용량"
           placeholder=""
@@ -592,6 +592,11 @@ function SchoolNameRow({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          lang="ko"
+          inputMode="text"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className={[
             "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-left text-sm font-extrabold text-[var(--brand-b)] focus:border-[color:rgba(185,213,50,0.7)] focus:outline-none focus:ring-2 focus:ring-[color:rgba(185,213,50,0.25)]",
             loading ? "pr-10" : "",
