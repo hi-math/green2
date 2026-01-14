@@ -6,6 +6,21 @@ type StepperProps = {
   onStepClick?: (step: number) => void;
 };
 
+function SoilSproutIcon({ showLeaves }: { showLeaves: boolean }) {
+  // 완료: 원본 새싹(sprout.svg)
+  // 미완료/현재: 잎 없이 흙만(soil.svg)
+  const src = showLeaves ? "/icons/sprout.svg" : "/icons/soil.svg";
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      className="h-8 w-8 select-none"
+      draggable={false}
+    />
+  );
+}
+
 export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
   return (
     <div className="w-full">
@@ -35,19 +50,17 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
                 type="button"
                 aria-current={isCurrent ? "step" : undefined}
                 className={[
-                  "relative flex h-6 w-6 items-center justify-center rounded-full transition",
+                  "relative flex h-9 w-9 items-center justify-center rounded-full border transition",
                   onStepClick ? "cursor-pointer hover:-translate-y-[1px]" : "",
                   isCurrent
-                    ? "bg-white ring-2 ring-[var(--brand-b)]"
+                    ? "border-[color:rgba(75,70,41,0.35)] bg-white ring-2 ring-[var(--brand-b)]"
                     : isDone
-                      ? "bg-[var(--brand-a)]"
-                      : "bg-white border-2 border-slate-200",
+                      ? "border-[color:rgba(185,213,50,0.35)] bg-white"
+                      : "border-slate-200 bg-white",
                 ].join(" ")}
                 onClick={() => onStepClick?.(stepNum)}
               >
-                {isCurrent ? (
-                  <span className="h-2.5 w-2.5 rounded-full bg-[var(--brand-b)]" />
-                ) : null}
+                <SoilSproutIcon showLeaves={isDone} />
               </button>
               <div
                 className={[

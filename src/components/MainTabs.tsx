@@ -269,6 +269,7 @@ function BasicInfoForm({
           placeholder={autoPlaceholders.classCount ?? form.classCountHint ?? ""}
           unit="학급"
           maxWidthClass="max-w-[120px]"
+          inputClassName="font-extrabold"
           value={form.classCount}
           onChange={(v) => setForm((s) => ({ ...s, classCount: v }))}
           inputMode="numeric"
@@ -278,6 +279,7 @@ function BasicInfoForm({
           placeholder={autoPlaceholders.studentCount ?? form.studentCountHint ?? ""}
           unit="명"
           maxWidthClass="max-w-[120px]"
+          inputClassName="font-extrabold"
           value={form.studentCount}
           onChange={(v) => setForm((s) => ({ ...s, studentCount: v }))}
           inputMode="numeric"
@@ -287,6 +289,7 @@ function BasicInfoForm({
           placeholder={autoPlaceholders.staffCount ?? form.staffCountHint ?? ""}
           unit="명"
           maxWidthClass="max-w-[120px]"
+          inputClassName="font-extrabold"
           value={form.staffCount}
           onChange={(v) => setForm((s) => ({ ...s, staffCount: v }))}
           inputMode="numeric"
@@ -296,6 +299,7 @@ function BasicInfoForm({
           placeholder={autoPlaceholders.schoolAreaM2 ?? form.schoolAreaM2Hint ?? ""}
           unit="m²"
           maxWidthClass="max-w-[120px]"
+          inputClassName="font-extrabold"
           value={form.schoolAreaM2}
           onChange={(v) => setForm((s) => ({ ...s, schoolAreaM2: v }))}
           inputMode="decimal"
@@ -524,6 +528,7 @@ function SchoolNameRow({
     office: string;
   }) => void | Promise<void>;
 }) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<
     Array<{ name: string; level: string; region: string; office: string }>
@@ -556,8 +561,25 @@ function SchoolNameRow({
     return () => clearTimeout(t);
   }, [fetchUrl]);
 
+  // Close dropdown when clicking outside (more reliable than relying on input blur)
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const target = e.target as Node | null;
+      if (target && !el.contains(target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [open]);
+
   return (
-    <div className="grid grid-cols-[160px_1fr] items-center gap-3">
+    <div ref={wrapRef} className="grid grid-cols-[160px_1fr] items-center gap-3">
       <div className="inline-flex h-10 items-center justify-center rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 text-center text-sm font-extrabold text-[var(--brand-b)]">
         {label}
       </div>
@@ -570,10 +592,6 @@ function SchoolNameRow({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          onBlur={() => {
-            // allow click selection (mousedown)
-            setTimeout(() => setOpen(false), 250);
-          }}
           className={[
             "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-left text-sm font-extrabold text-[var(--brand-b)] focus:border-[color:rgba(185,213,50,0.7)] focus:outline-none focus:ring-2 focus:ring-[color:rgba(185,213,50,0.25)]",
             loading ? "pr-10" : "",
