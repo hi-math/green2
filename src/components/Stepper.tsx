@@ -1,11 +1,5 @@
 "use client";
 
-type StepperProps = {
-  steps: string[];
-  currentStep: number; // 1-based
-  onStepClick?: (step: number) => void;
-};
-
 function SoilSproutIcon({ showLeaves }: { showLeaves: boolean }) {
   // 완료: 원본 새싹(sprout.svg)
   // 미완료/현재: 잎 없이 흙만(soil.svg)
@@ -21,75 +15,96 @@ function SoilSproutIcon({ showLeaves }: { showLeaves: boolean }) {
   );
 }
 
+type StepperProps = {
+  steps: string[];
+  currentStep: number; // 1-based
+  onStepClick?: (step: number) => void;
+};
+
 export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
+  const n = steps.length;
+  const clamped = Math.max(1, Math.min(currentStep, n));
+
+  // Progress width rule that matches "-0--0-" spacing:
+  // With N equal columns, circle centers sit at (1/2N, 3/2N, ...).
+  // To make step1: left green + half next segment (equal lengths), we fill to 1/N.
+  // step2 -> 2/N, ... step(N-1) -> (N-1)/N, stepN -> 1.
+  const progressPct = n <= 1 ? 0 : clamped >= n ? 100 : (clamped / n) * 100;
+
   return (
     <div className="w-full">
-      <div className="relative mx-auto w-full">
-        {/* connector line */}
-        <div className="absolute left-0 right-0 top-[14px] h-[2px] rounded-full bg-slate-200" />
+      {/* Row 1: circles equally spaced (grid) + continuous connector line behind */}
+      <div className="relative w-full px-3">
+        {/* connector line (centered on circle) */}
+        <div className="absolute left-3 right-3 top-4 h-[2px] rounded-full bg-slate-200" />
         <div
-          className="absolute left-0 top-[14px] h-[2px] rounded-full bg-[var(--brand-a)]"
-          style={{
-            width:
-              steps.length <= 1
-                ? "0%"
-                : `${((Math.min(currentStep, steps.length) - 1) / (steps.length - 1)) * 100}%`,
-          }}
+          className="absolute left-3 top-4 h-[2px] rounded-full bg-[var(--brand-a)]"
+          style={{ width: `${progressPct}%` }}
         />
 
-        {/* circles are inset so the connector line protrudes on both ends (balanced like the mock) */}
-        <div className="relative z-10 flex w-full items-start justify-between px-6">
+        <div
+          className="relative z-10 grid w-full items-center"
+          style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
+        >
           {steps.map((label, idx) => {
-          const stepNum = idx + 1;
-          const isCurrent = stepNum === currentStep;
-          const isDone = stepNum < currentStep;
-          const lines = label.split("\n");
+            const stepNum = idx + 1;
+            const isCurrent = stepNum === clamped;
+            const isDone = stepNum < clamped;
+            return (
+              <div key={`circle-wrap-${stepNum}`} className="flex justify-center">
+                <button
+                  type="button"
+                  aria-current={isCurrent ? "step" : undefined}
+                  className={[
+                    "flex h-8 w-8 items-center justify-center rounded-xl border bg-white transition",
+                    onStepClick ? "cursor-pointer hover:-translate-y-[1px]" : "",
+                    isCurrent
+                      ? "border-[color:rgba(75,70,41,0.28)] ring-2 ring-[color:rgba(75,70,41,0.25)]"
+                      : isDone
+                        ? "border-[color:rgba(185,213,50,0.35)]"
+                        : "border-slate-200",
+                  ].join(" ")}
+                  onClick={() => onStepClick?.(stepNum)}
+                  title={label.replace("\n", " ")}
+                >
+                  <SoilSproutIcon showLeaves={isDone} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
+      {/* Row 2: labels centered under circles (same grid) */}
+      <div
+        className="mt-3 grid w-full px-3"
+        style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
+      >
+        {steps.map((label, idx) => {
+          const stepNum = idx + 1;
+          const isCurrent = stepNum === clamped;
+          const lines = label.split("\n");
           return (
-            <div key={label} className="flex flex-col items-center">
-              <button
-                type="button"
-                aria-current={isCurrent ? "step" : undefined}
-                className={[
-                  // circle ~20% smaller (9 -> 7)
-                  "relative flex h-7 w-7 items-center justify-center rounded-full border transition",
-                  onStepClick ? "cursor-pointer hover:-translate-y-[1px]" : "",
-                  isCurrent
-                    ? "border-[color:rgba(75,70,41,0.35)] bg-white ring-2 ring-[var(--brand-b)]"
-                    : isDone
-                      ? "border-[color:rgba(185,213,50,0.35)] bg-white"
-                      : "border-slate-200 bg-white",
-                ].join(" ")}
-                onClick={() => onStepClick?.(stepNum)}
-              >
-                <SoilSproutIcon showLeaves={isDone} />
-              </button>
+            <div key={`label-${stepNum}`} className="text-center leading-tight">
               <div
                 className={[
-                  "mt-3 text-center leading-tight",
+                  "text-[10px] font-extrabold",
+                  isCurrent ? "text-[var(--brand-b)]" : "text-slate-400",
                 ].join(" ")}
               >
-                <div
-                  className={[
-                    "text-[10px] font-extrabold",
-                    isCurrent ? "text-[var(--brand-b)]" : "text-slate-400",
-                  ].join(" ")}
-                >
-                  {lines[0] ?? ""}
-                </div>
-                <div
-                  className={[
-                    "text-[10px] font-extrabold",
-                    isCurrent ? "text-[var(--brand-b)]" : "text-slate-400",
-                  ].join(" ")}
-                >
-                  {lines[1] ?? ""}
-                </div>
+                {lines[0] ?? ""}
+              </div>
+              <div
+                className={[
+                  "text-[10px] font-extrabold",
+                  isCurrent ? "text-[var(--brand-b)]" : "text-slate-400",
+                ].join(" ")}
+              >
+                {lines[1] ?? ""}
               </div>
             </div>
           );
-          })}
-        </div>
+        })}
       </div>
     </div>
   );
