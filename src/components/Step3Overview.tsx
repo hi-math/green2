@@ -201,18 +201,20 @@ function SemiShareGauge({
       {/* 4개 영역 그리드 레이아웃 */}
       <div className="grid grid-cols-[28%_47%_25%] gap-2" style={{ height: `${cardHeight}px` }}>
         {/* 2영역: 총 탄소배출량 */}
-        <div className="h-full flex flex-col justify-center">
-          <div className="text-[10px] font-semibold text-[color:rgba(75,70,41,0.7)] text-left">
+        <div className="h-full flex flex-col pt-2">
+          <div className="text-base font-semibold text-[var(--brand-b)] text-left mb-3">
             총 탄소배출량
           </div>
-          <div
-            className="font-black text-[var(--brand-b)] text-center"
-            style={{ fontSize: `${totalFontPx}px`, lineHeight: 1 }}
-          >
-            <CountUpNumber value={totalValue} duration={1500} />
-          </div>
-          <div className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.6)] text-center">
-            kgCO2eq
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <div
+              className="font-black text-[var(--brand-b)] text-center"
+              style={{ fontSize: `${totalFontPx}px`, lineHeight: 1 }}
+            >
+              <CountUpNumber value={totalValue} duration={1500} />
+            </div>
+            <div className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.6)] text-center">
+              kgCO2eq
+            </div>
           </div>
         </div>
 
@@ -313,6 +315,7 @@ type Step1Snapshot = {
 };
 
 const STEP1_STORAGE_KEY = "carbonapp.step1";
+const STEP2_STORAGE_KEY = "carbonapp.step2";
 
 function loadStep1FromSession(): Step1Snapshot | null {
   try {
@@ -321,6 +324,16 @@ function loadStep1FromSession(): Step1Snapshot | null {
     return (JSON.parse(raw) as Step1Snapshot) ?? null;
   } catch {
     return null;
+  }
+}
+
+function loadStep2FromSession(): Record<string, boolean> {
+  try {
+    const raw = sessionStorage.getItem(STEP2_STORAGE_KEY);
+    if (!raw) return {};
+    return (JSON.parse(raw) as Record<string, boolean>) ?? {};
+  } catch {
+    return {};
   }
 }
 
@@ -371,6 +384,160 @@ function RecCard({
   );
 }
 
+// Step2의 모든 항목 정의 (Step2Cards.tsx와 동일)
+const STEP2_ALL_ITEMS = [
+  {
+    id: "daily-01",
+    label: "학교 탄소중립 실천 과제 선정 및 실천",
+    category: "실천 행동의 일상화",
+  },
+  { id: "daily-02", label: "학교 탄소 배출 데이터 정기적 공유", category: "실천 행동의 일상화" },
+  { id: "daily-03", label: "피크전력 시간대 확인 및 감축 관리", category: "실천 행동의 일상화" },
+  { id: "daily-04", label: "학교 차원 대기전력 차단 관리", category: "실천 행동의 일상화" },
+  { id: "daily-05", label: "디벗 충전 및 관리 기준 수립", category: "실천 행동의 일상화" },
+  { id: "daily-06", label: "공간별·시설별 조명 및 냉난방 규칙 마련", category: "실천 행동의 일상화" },
+  { id: "daily-07", label: "학교 차원 일회용품 사용 자제 약속", category: "실천 행동의 일상화" },
+  { id: "daily-08", label: "학교 차원 종이 인쇄물 사용 자제 약속", category: "실천 행동의 일상화" },
+  { id: "daily-09", label: "재활용을 위한 분리배출 규칙 준수", category: "실천 행동의 일상화" },
+  {
+    id: "culture-01",
+    label: "탄소중립 학생 교육 프로그램 · 프로젝트 운영",
+    category: "실천 문화 확산",
+  },
+  { id: "culture-02", label: "학생 기후행동 동아리 운영", category: "실천 문화 확산" },
+  { id: "culture-03", label: "교직원 탄소중립 연수 운영", category: "실천 문화 확산" },
+  { id: "culture-04", label: "교직원 학습공동체 운영", category: "실천 문화 확산" },
+  {
+    id: "culture-05",
+    label: "학부모 및 지역 연계 프로그램 · 프로젝트 운영",
+    category: "실천 문화 확산",
+  },
+  {
+    id: "culture-06",
+    label: "학교 차원 탄소저감 생활규칙 마련",
+    category: "실천 문화 확산",
+  },
+  { id: "culture-07", label: "학생 주도 나눔 장터 운영", category: "실천 문화 확산" },
+  { id: "culture-08", label: "교복 물려주기 상시 운영", category: "실천 문화 확산" },
+  { id: "culture-09", label: "정기 채식 급식의 날 운영", category: "실천 문화 확산" },
+  { id: "culture-10", label: "음식물 쓰레기 줄이기 프로그램 운영", category: "실천 문화 확산" },
+  { id: "culture-11", label: "지역 농산물 적극 활용", category: "실천 문화 확산" },
+  { id: "culture-12", label: "지역 푸드뱅크 활용", category: "실천 문화 확산" },
+  { id: "env-01", label: "교내 탄소 문해력 교육 공간 운영", category: "학교 환경 조성" },
+  { id: "env-02", label: "태양광 패널 설치 및 발전량 활용 교육 연계", category: "학교 환경 조성" },
+  {
+    id: "env-03",
+    label: "냉 · 난방 효율 향상을 위한 환경 개선 사업 추진",
+    category: "학교 환경 조성",
+  },
+  { id: "env-04", label: "단열 강화를 위한 창문 단열필름 등 간단한 시설 개선", category: "학교 환경 조성" },
+  { id: "env-05", label: "학교 텃밭 운영을 위한 빗물저금통 설치 및 활용", category: "학교 환경 조성" },
+  { id: "env-06", label: "절수형 화장실 설비 도입 또는 단계적 개선", category: "학교 환경 조성" },
+  {
+    id: "env-07",
+    label: "학교 숲, 텃밭을 활용한 생태 · 탄소중립 연계 교육 프로그램 운영",
+    category: "학교 환경 조성",
+  },
+  { id: "env-08", label: "분리배출장을 활용한 자원순환 교육 프로그램 운영", category: "학교 환경 조성" },
+];
+
+// 원형 진행 표시 카드 컴포넌트 (이미지 형식과 동일)
+function ActionProgressCard({
+  title,
+  selectedCount,
+  totalCount,
+  recommendedItems,
+}: {
+  title: string;
+  selectedCount: number;
+  totalCount: number;
+  recommendedItems: string[];
+}) {
+  const percentage = totalCount > 0 ? Math.round((selectedCount / totalCount) * 100) : 0;
+  const r = 42;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, percentage));
+  const dash = (clamped / 100) * c;
+
+  const allCompleted = selectedCount === totalCount && totalCount > 0;
+
+  // 0%: 갈색 (#4b4629 = rgb(75, 70, 41)), 100%: 연두색 (#b9d532 = rgb(185, 213, 50))
+  // 퍼센티지에 따라 RGB 값을 보간
+  const getProgressColor = (pct: number): string => {
+    const brown = { r: 75, g: 70, b: 41 };
+    const green = { r: 185, g: 213, b: 50 };
+    const ratio = pct / 100;
+    const r = Math.round(brown.r + (green.r - brown.r) * ratio);
+    const g = Math.round(brown.g + (green.g - brown.g) * ratio);
+    const b = Math.round(brown.b + (green.b - brown.b) * ratio);
+    return `rgb(${r}, ${g}, ${b})`;
+  };
+
+  const progressColor = getProgressColor(clamped);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
+      <div className="mb-4">
+        <h3 className="text-lg font-black text-[var(--brand-b)] tracking-tight text-left">
+          {title}
+        </h3>
+      </div>
+      <div className="flex flex-col items-center justify-center">
+        {/* 원형 진행 표시 */}
+        <div className="relative h-[140px] w-[140px] mb-4">
+          <svg viewBox="0 0 100 100" className="h-full w-full">
+            <circle
+              cx="50"
+              cy="50"
+              r={r}
+              stroke="#E5E7EB"
+              strokeWidth="8"
+              fill="none"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r={r}
+              stroke={progressColor}
+              strokeWidth="8"
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={`${dash} ${c - dash}`}
+              transform="rotate(-90 50 50)"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="text-3xl font-black text-[var(--brand-b)] leading-none">
+              {selectedCount}/{totalCount}
+            </div>
+          </div>
+        </div>
+
+        {/* 추천과제 섹션 */}
+        <div className="w-full mt-4">
+          <div className="mb-3 inline-flex rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 py-1.5 text-sm font-extrabold text-[var(--brand-b)]">
+            추천과제
+          </div>
+          {allCompleted ? (
+            <div className="text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)]">
+              모든 과제를 달성했습니다.
+            </div>
+          ) : recommendedItems.length > 0 ? (
+            <ul className="space-y-2 text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)] pl-6">
+              {recommendedItems.map((item, idx) => (
+                <li key={idx} className="flex gap-2">
+                  <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:rgba(75,70,41,0.35)]" />
+                  <span className="min-w-0">{item}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Step3Overview() {
   const [schoolName, setSchoolName] = useState<string>("");
   const [basicNums, setBasicNums] = useState<{
@@ -383,6 +550,7 @@ export function Step3Overview() {
     gas?: string;
     water?: string;
   } | null>(null);
+  const [step2Selections, setStep2Selections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const snap = loadStep1FromSession();
@@ -398,6 +566,7 @@ export function Step3Overview() {
       gas: e.gasWon ?? "",
       water: e.waterWon ?? "",
     });
+    setStep2Selections(loadStep2FromSession());
   }, []);
 
   const carbonStats = useMemo(() => {
@@ -487,17 +656,35 @@ export function Step3Overview() {
     return Math.round(savedKg / 6.6); // 소나무 그루 수
   }, [carbonStats, parts]);
 
+  // Step2 선택 상태 기반으로 카테고리별 실천행동 통계 계산
+  const categoryStats = useMemo(() => {
+    const dailyItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 행동의 일상화");
+    const cultureItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 문화 확산");
+    const envItems = STEP2_ALL_ITEMS.filter((item) => item.category === "학교 환경 조성");
+
+    const getCategoryStats = (items: typeof STEP2_ALL_ITEMS) => {
+      const selectedCount = items.filter((item) => step2Selections[item.id]).length;
+      const totalCount = items.length;
+      const unselectedItems = items
+        .filter((item) => !step2Selections[item.id])
+        .map((item) => item.label);
+      return { selectedCount, totalCount, recommendedItems: unselectedItems };
+    };
+
+    return {
+      daily: getCategoryStats(dailyItems),
+      culture: getCategoryStats(cultureItems),
+      env: getCategoryStats(envItems),
+    };
+  }, [step2Selections]);
+
   return (
     <div className="w-full space-y-6">
       {/* Two separate cards side by side */}
       <div className="grid grid-cols-[1.4fr_1fr] gap-6">
         {/* Left card: 탄소배출량 (넓게) */}
         <div className="rounded-2xl border border-slate-200 bg-white/70 shadow-sm backdrop-blur">
-          <div className="text-base font-extrabold text-[var(--brand-b)] px-6 pt-6">
-            2025년 {schoolName || "우리학교"} 탄소배출량
-          </div>
-
-          <div className="px-6 pb-6">
+          <div className="px-6 pt-6 pb-6">
             {carbonStats.kind === "value" ? (
               <SemiShareGauge
                 parts={parts}
@@ -531,33 +718,23 @@ export function Step3Overview() {
 
       {/* Bottom cards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <RecCard
+        <ActionProgressCard
           title="실천 행동"
-          pct={70}
-          items={[
-            "탄소배출 데이터 교내 구성원 공유",
-            "겨울철 피크전력 확인 및 감축 관리",
-            "디벗 충전 및 관리 기준 수립",
-            "장소·시설별 조명 및 냉난방 규칙 마련",
-          ]}
+          selectedCount={categoryStats.daily.selectedCount}
+          totalCount={categoryStats.daily.totalCount}
+          recommendedItems={categoryStats.daily.recommendedItems}
         />
-        <RecCard
+        <ActionProgressCard
           title="실천 문화"
-          pct={75}
-          items={[
-            "나눔장터 운영",
-            "교복 물려주기 상시 운영",
-            "지역농산물 적극 활용",
-          ]}
+          selectedCount={categoryStats.culture.selectedCount}
+          totalCount={categoryStats.culture.totalCount}
+          recommendedItems={categoryStats.culture.recommendedItems}
         />
-        <RecCard
+        <ActionProgressCard
           title="환경 구성"
-          pct={77}
-          items={[
-            "창문단열필름 부착",
-            "빗물저금통 설치",
-            "태양광발전시설 관련 교육 프로그램 운영",
-          ]}
+          selectedCount={categoryStats.env.selectedCount}
+          totalCount={categoryStats.env.totalCount}
+          recommendedItems={categoryStats.env.recommendedItems}
         />
       </div>
     </div>
