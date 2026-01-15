@@ -32,6 +32,18 @@ function normalizeDigitsOnlyInput(value: string) {
   return value.replace(/[\s,]/g, "").trim();
 }
 
+function formatNumberLike(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  // allow digits/commas/spaces with optional decimal part
+  if (!/^[\d\s,]+(\.\d+)?$/.test(raw)) return raw;
+  const cleaned = raw.replace(/[\s,]/g, "");
+  if (!cleaned) return "";
+  const [intPart, decPart] = cleaned.split(".", 2);
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return decPart != null && decPart.length > 0 ? `${withCommas}.${decPart}` : withCommas;
+}
+
 function isIntString(value: string) {
   const v = normalizeDigitsOnlyInput(value);
   return v.length > 0 && /^\d+$/.test(v);
@@ -139,10 +151,18 @@ function BasicInfoForm({
 
   const isSchoolNameFilled = Boolean(form.schoolName.trim());
 
-  const classCountPlaceholder = autoPlaceholders.classCount ?? form.classCountHint ?? "";
-  const studentCountPlaceholder = autoPlaceholders.studentCount ?? form.studentCountHint ?? "";
-  const staffCountPlaceholder = autoPlaceholders.staffCount ?? form.staffCountHint ?? "";
-  const schoolAreaM2Placeholder = autoPlaceholders.schoolAreaM2 ?? form.schoolAreaM2Hint ?? "";
+  const classCountPlaceholder = formatNumberLike(
+    autoPlaceholders.classCount ?? form.classCountHint ?? "",
+  );
+  const studentCountPlaceholder = formatNumberLike(
+    autoPlaceholders.studentCount ?? form.studentCountHint ?? "",
+  );
+  const staffCountPlaceholder = formatNumberLike(
+    autoPlaceholders.staffCount ?? form.staffCountHint ?? "",
+  );
+  const schoolAreaM2Placeholder = formatNumberLike(
+    autoPlaceholders.schoolAreaM2 ?? form.schoolAreaM2Hint ?? "",
+  );
 
   const classCountInvalid =
     form.classCount.trim().length > 0 && !isIntString(form.classCount);
@@ -161,9 +181,6 @@ function BasicInfoForm({
             <DocIcon />
           </span>
           기본 정보
-          <span className="ml-1 min-w-0 truncate whitespace-nowrap text-xs font-bold text-[color:rgba(75,70,41,0.6)]">
-            학교명을 입력하면 데이터를 불러옵니다.
-          </span>
         </div>
         {schoolinfoYear ? (
           <div className="text-sm font-extrabold text-[color:rgba(75,70,41,0.7)]">
@@ -240,10 +257,10 @@ function BasicInfoForm({
                 setEnergyYearUsed(y);
                 setEmissions((e) => ({
                   ...e,
-                  electricWon: String(v.electricityKwh ?? "").trim(),
-                  gasWon: String(v.gasM3 ?? "").trim(),
-                  waterWon: String(v.waterM3 ?? "").trim(),
-                  solarAnnualKwh: String(v.renewableKwh ?? "").trim(),
+                  electricWon: formatNumberLike(String(v.electricityKwh ?? "").trim()),
+                  gasWon: formatNumberLike(String(v.gasM3 ?? "").trim()),
+                  waterWon: formatNumberLike(String(v.waterM3 ?? "").trim()),
+                  solarAnnualKwh: formatNumberLike(String(v.renewableKwh ?? "").trim()),
                 }));
               }
 
@@ -441,9 +458,6 @@ function EmissionsForm({
             <Co2CloudIcon />
           </span>
           탄소 배출 관련 정보
-          <span className="ml-1 min-w-0 truncate whitespace-nowrap text-xs font-bold text-[color:rgba(75,70,41,0.6)]">
-            학교명을 입력하면 데이터를 불러옵니다.
-          </span>
         </div>
         {yearUsed ? (
           <div className="text-sm font-extrabold text-[color:rgba(75,70,41,0.7)]">
@@ -669,66 +683,67 @@ function SchoolNameRow({
         {label}
       </div>
 
-      <div className="relative flex items-center">
-        <input
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            setOpen(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              setOpen(false);
-              return;
-            }
-            // If only one candidate remains, Enter should accept it.
-            if (e.key === "Enter" && open && items.length === 1) {
-              e.preventDefault();
-              pick(items[0]);
-            }
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder="학교명을 입력하세요"
-          lang="ko"
-          inputMode="text"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          className={[
-            "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-left text-sm font-extrabold text-[var(--brand-b)] focus:border-[color:rgba(185,213,50,0.7)] focus:outline-none focus:ring-2 focus:ring-[color:rgba(185,213,50,0.25)]",
-            loading ? "pr-10" : "",
-            maxWidthClass ?? "",
-          ].join(" ")}
-        />
+      <div className="flex items-center">
+        <div className={["relative w-full min-w-0", maxWidthClass ?? ""].join(" ")}>
+          <input
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              setOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setOpen(false);
+                return;
+              }
+              // If only one candidate remains, Enter should accept it.
+              if (e.key === "Enter" && open && items.length === 1) {
+                e.preventDefault();
+                pick(items[0]);
+              }
+            }}
+            onFocus={() => setOpen(true)}
+          placeholder="학교명을 입력하면 데이터를 불러옵니다."
+            lang="ko"
+            inputMode="text"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            className={[
+              "h-10 w-full border border-slate-200 bg-white px-3 text-left text-sm font-extrabold text-[var(--brand-b)] focus:border-[color:rgba(185,213,50,0.7)] focus:outline-none focus:ring-2 focus:ring-[color:rgba(185,213,50,0.25)]",
+              loading ? "rounded-l-lg rounded-r-none" : "rounded-lg",
+            ].join(" ")}
+          />
+
+          {open && items.length > 0 ? (
+            <div className="absolute left-0 top-11 z-20 w-full max-w-[520px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+              {items.map((it) => (
+                <button
+                  key={`${it.name}-${it.level}-${it.region}-${it.office}`}
+                  type="button"
+                  className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50"
+                  onMouseDown={(e) => {
+                    // prevent input blur from closing before selection applies
+                    e.preventDefault();
+                    pick(it);
+                  }}
+                >
+                  <span className="text-sm font-extrabold text-[var(--brand-b)]">
+                    {it.name}
+                  </span>
+                  <span className="shrink-0 text-xs text-[color:rgba(75,70,41,0.6)]">
+                    {it.level}
+                    {it.region ? ` · ${it.region}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         {loading ? (
-          <div className="pointer-events-none absolute right-3 inline-flex h-10 items-center">
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-r-lg border border-l-0 border-slate-200 bg-white">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-[var(--brand-b)]" />
-          </div>
-        ) : null}
-
-        {open && items.length > 0 ? (
-          <div className="absolute left-0 top-11 z-20 w-full max-w-[520px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-            {items.map((it) => (
-              <button
-                key={`${it.name}-${it.level}-${it.region}-${it.office}`}
-                type="button"
-                className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50"
-                onMouseDown={(e) => {
-                  // prevent input blur from closing before selection applies
-                  e.preventDefault();
-                  pick(it);
-                }}
-              >
-                <span className="text-sm font-extrabold text-[var(--brand-b)]">
-                  {it.name}
-                </span>
-                <span className="shrink-0 text-xs text-[color:rgba(75,70,41,0.6)]">
-                  {it.level}
-                  {it.region ? ` · ${it.region}` : ""}
-                </span>
-              </button>
-            ))}
           </div>
         ) : null}
       </div>
