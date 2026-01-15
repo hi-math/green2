@@ -1,11 +1,14 @@
+import type { ReactNode } from "react";
+
 type PageHeaderProps = {
   title: string;
   showIntro?: boolean;
+  actions?: ReactNode;
 };
 
-export function PageHeader({ title, showIntro = true }: PageHeaderProps) {
+export function PageHeader({ title, showIntro = true, actions }: PageHeaderProps) {
   return (
-    <div className="mb-5 flex items-center gap-5">
+    <div className="mb-5 flex min-h-[64px] items-center gap-5">
       <div className="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
         {title}
       </div>
@@ -29,6 +32,7 @@ export function PageHeader({ title, showIntro = true }: PageHeaderProps) {
       ) : (
         <div className="flex-1" />
       )}
+      {actions ? <div className="shrink-0">{actions}</div> : null}
     </div>
   );
 }

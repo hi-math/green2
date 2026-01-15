@@ -657,6 +657,12 @@ function SchoolNameRow({
     };
   }, [open]);
 
+  const pick = (it: { name: string; level: string; region: string; office: string }) => {
+    onChange(it.name);
+    setOpen(false);
+    void onPicked?.(it);
+  };
+
   return (
     <div ref={wrapRef} className="grid grid-cols-[160px_1fr] items-center gap-3">
       <div className="inline-flex h-10 items-center justify-center rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 text-center text-sm font-extrabold text-[var(--brand-b)]">
@@ -670,7 +676,19 @@ function SchoolNameRow({
             onChange(e.target.value);
             setOpen(true);
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setOpen(false);
+              return;
+            }
+            // If only one candidate remains, Enter should accept it.
+            if (e.key === "Enter" && open && items.length === 1) {
+              e.preventDefault();
+              pick(items[0]);
+            }
+          }}
           onFocus={() => setOpen(true)}
+          placeholder="학교명을 입력하세요"
           lang="ko"
           inputMode="text"
           autoCapitalize="none"
@@ -699,9 +717,7 @@ function SchoolNameRow({
                 onMouseDown={(e) => {
                   // prevent input blur from closing before selection applies
                   e.preventDefault();
-                  onChange(it.name);
-                  setOpen(false);
-                  void onPicked?.(it);
+                  pick(it);
                 }}
               >
                 <span className="text-sm font-extrabold text-[var(--brand-b)]">

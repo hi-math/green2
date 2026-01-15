@@ -4,7 +4,7 @@ import { PageHeader } from "../../../components/PageHeader";
 export default function Page4() {
   return (
     <div className="pt-6">
-      <PageHeader title="우리학교 실천 과제 선정" />
+      <PageHeader title="우리학교 실천 과제 선정" showIntro={false} />
       <MainTabs />
     </div>
   );
