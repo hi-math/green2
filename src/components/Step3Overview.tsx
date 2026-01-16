@@ -96,24 +96,29 @@ function SemiShareGauge({
   // 최소 비율 보장을 위한 처리 (시각적으로 보이도록)
   const MIN_PCT = 3; // 최소 3% 보장
   
-  const segments = parts.map((p) => {
-    const value = Math.max(0, Number.isFinite(p.value) ? p.value : 0);
-    const rawPct = (value / safeTotal) * 100;
-    return {
-      ...p,
-      value,
-      rawPct, // 원본 비율 저장 (표시용)
-      pct: Math.round(rawPct),
-    };
-  });
+  // 작은 세그먼트를 위한 최소 각도 보장을 위한 비율 계산
+  const segmentsWithDisplayPct = useMemo(() => {
+    const segments = parts.map((p) => {
+      const value = Math.max(0, Number.isFinite(p.value) ? p.value : 0);
+      const rawPct = (value / safeTotal) * 100;
+      const pct = Math.round(rawPct);
+      return {
+        ...p,
+        value,
+        rawPct, // 원본 비율 저장 (표시용)
+        pct,
+      };
+    });
 
-  // 작은 세그먼트를 위한 최소 각도 보장
-  const adjustedSegments = useMemo(() => {
     const smallSegments = segments.filter((s) => s.pct > 0 && s.pct < MIN_PCT);
     const largeSegments = segments.filter((s) => s.pct >= MIN_PCT);
     
     if (smallSegments.length === 0) {
-      return segments;
+      // 작은 세그먼트가 없으면 displayPct = pct
+      return segments.map((seg) => ({
+        ...seg,
+        displayPct: seg.pct,
+      }));
     }
     
     // 작은 세그먼트에 필요한 최소 비율 합계
@@ -125,25 +130,21 @@ function SemiShareGauge({
     const scaleFactor = largeSegmentsTotalPct > 0 ? availablePct / largeSegmentsTotalPct : 1;
     
     return segments.map((seg) => {
-      if (seg.pct > 0 && seg.pct < MIN_PCT) {
-        return { ...seg, displayPct: MIN_PCT };
-      } else if (seg.pct >= MIN_PCT) {
-        return { ...seg, displayPct: seg.pct * scaleFactor };
-      }
-      return { ...seg, displayPct: seg.pct };
+      const displayPct = seg.pct > 0 && seg.pct < MIN_PCT 
+        ? MIN_PCT 
+        : seg.pct >= MIN_PCT 
+        ? seg.pct * scaleFactor 
+        : seg.pct;
+      return { ...seg, displayPct };
     });
-  }, [segments]);
+  }, [parts, safeTotal]);
+
+  const segments = segmentsWithDisplayPct;
 
   // 그래프에 표시할 값 (시각적 비율 조정)
-  const series = adjustedSegments.map((s) => {
-    if (s.pct > 0 && s.pct < MIN_PCT) {
-      // 작은 세그먼트는 최소 비율로 표시
-      return (s.displayPct / 100) * safeTotal;
-    }
-    return (s.displayPct / 100) * safeTotal;
-  });
-  const labels = adjustedSegments.map((s) => s.label);
-  const colors = adjustedSegments.map((s) => s.color);
+  const series = segments.map((s) => (s.displayPct / 100) * safeTotal);
+  const labels = segments.map((s) => s.label);
+  const colors = segments.map((s) => s.color);
 
   // 호버된 segment ID 추적
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
@@ -153,7 +154,7 @@ function SemiShareGauge({
     const angles: Array<{ id: string; startAngle: number; endAngle: number; midAngle: number }> = [];
     let currentAngle = -90; // 시작 각도
     
-    adjustedSegments.forEach((seg) => {
+    segments.forEach((seg) => {
       const angleRange = 180 * (seg.displayPct / 100); // 전체 180도 중 이 세그먼트가 차지하는 각도
       const startAngle = currentAngle;
       const endAngle = currentAngle + angleRange;
@@ -164,7 +165,7 @@ function SemiShareGauge({
     });
     
     return angles;
-  }, [adjustedSegments]);
+  }, [segments]);
 
   // 총 배출량 숫자 길이에 따라 폰트 크기 조정
   const digitCount = totalText.replace(/[^\d]/g, "").length;
@@ -183,8 +184,8 @@ function SemiShareGauge({
       events: {
         dataPointMouseEnter: (event: any, chartContext: any, config: any) => {
           const dataPointIndex = config.dataPointIndex;
-          if (dataPointIndex !== undefined && adjustedSegments[dataPointIndex]) {
-            setHoveredSegmentId(adjustedSegments[dataPointIndex].id);
+          if (dataPointIndex !== undefined && segments[dataPointIndex]) {
+            setHoveredSegmentId(segments[dataPointIndex].id);
           }
         },
         dataPointMouseLeave: () => {
