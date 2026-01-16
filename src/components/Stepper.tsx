@@ -59,7 +59,7 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
                     "flex h-8 w-8 items-center justify-center rounded-xl border bg-white transition",
                     onStepClick ? "cursor-pointer hover:-translate-y-[1px]" : "",
                     isCurrent
-                      ? "border-[color:rgba(75,70,41,0.28)] ring-2 ring-[color:rgba(75,70,41,0.25)]"
+                      ? "border-[color:rgba(185,213,50,0.55)] ring-2 ring-[color:rgba(185,213,50,0.35)]"
                       : isDone
                         ? "border-[color:rgba(185,213,50,0.35)]"
                         : "border-slate-200",

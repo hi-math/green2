@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 
@@ -93,21 +93,78 @@ function SemiShareGauge({
   );
   const safeTotal = total > 0 ? total : 1;
 
+  // 최소 비율 보장을 위한 처리 (시각적으로 보이도록)
+  const MIN_PCT = 3; // 최소 3% 보장
+  
   const segments = parts.map((p) => {
     const value = Math.max(0, Number.isFinite(p.value) ? p.value : 0);
+    const rawPct = (value / safeTotal) * 100;
     return {
       ...p,
       value,
-      pct: Math.round((value / safeTotal) * 100),
+      rawPct, // 원본 비율 저장 (표시용)
+      pct: Math.round(rawPct),
     };
   });
 
-  const series = segments.map((s) => s.value);
-  const labels = segments.map((s) => s.label);
-  const colors = segments.map((s) => s.color);
+  // 작은 세그먼트를 위한 최소 각도 보장
+  const adjustedSegments = useMemo(() => {
+    const smallSegments = segments.filter((s) => s.pct > 0 && s.pct < MIN_PCT);
+    const largeSegments = segments.filter((s) => s.pct >= MIN_PCT);
+    
+    if (smallSegments.length === 0) {
+      return segments;
+    }
+    
+    // 작은 세그먼트에 필요한 최소 비율 합계
+    const totalMinPctNeeded = smallSegments.length * MIN_PCT;
+    const largeSegmentsTotalPct = largeSegments.reduce((sum, s) => sum + s.pct, 0);
+    
+    // 큰 세그먼트들의 비율을 조정 (작은 세그먼트에 할당할 공간 확보)
+    const availablePct = 100 - totalMinPctNeeded;
+    const scaleFactor = largeSegmentsTotalPct > 0 ? availablePct / largeSegmentsTotalPct : 1;
+    
+    return segments.map((seg) => {
+      if (seg.pct > 0 && seg.pct < MIN_PCT) {
+        return { ...seg, displayPct: MIN_PCT };
+      } else if (seg.pct >= MIN_PCT) {
+        return { ...seg, displayPct: seg.pct * scaleFactor };
+      }
+      return { ...seg, displayPct: seg.pct };
+    });
+  }, [segments]);
+
+  // 그래프에 표시할 값 (시각적 비율 조정)
+  const series = adjustedSegments.map((s) => {
+    if (s.pct > 0 && s.pct < MIN_PCT) {
+      // 작은 세그먼트는 최소 비율로 표시
+      return (s.displayPct / 100) * safeTotal;
+    }
+    return (s.displayPct / 100) * safeTotal;
+  });
+  const labels = adjustedSegments.map((s) => s.label);
+  const colors = adjustedSegments.map((s) => s.color);
 
   // 호버된 segment ID 추적
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
+  
+  // 각 세그먼트의 각도 계산 (반원: -90도 ~ 90도) - displayPct 사용
+  const segmentAngles = useMemo(() => {
+    const angles: Array<{ id: string; startAngle: number; endAngle: number; midAngle: number }> = [];
+    let currentAngle = -90; // 시작 각도
+    
+    adjustedSegments.forEach((seg) => {
+      const angleRange = 180 * (seg.displayPct / 100); // 전체 180도 중 이 세그먼트가 차지하는 각도
+      const startAngle = currentAngle;
+      const endAngle = currentAngle + angleRange;
+      const midAngle = (startAngle + endAngle) / 2;
+      
+      angles.push({ id: seg.id, startAngle, endAngle, midAngle });
+      currentAngle = endAngle;
+    });
+    
+    return angles;
+  }, [adjustedSegments]);
 
   // 총 배출량 숫자 길이에 따라 폰트 크기 조정
   const digitCount = totalText.replace(/[^\d]/g, "").length;
@@ -126,8 +183,8 @@ function SemiShareGauge({
       events: {
         dataPointMouseEnter: (event: any, chartContext: any, config: any) => {
           const dataPointIndex = config.dataPointIndex;
-          if (dataPointIndex !== undefined && segments[dataPointIndex]) {
-            setHoveredSegmentId(segments[dataPointIndex].id);
+          if (dataPointIndex !== undefined && adjustedSegments[dataPointIndex]) {
+            setHoveredSegmentId(adjustedSegments[dataPointIndex].id);
           }
         },
         dataPointMouseLeave: () => {
@@ -152,7 +209,7 @@ function SemiShareGauge({
     colors,
     stroke: {
       show: true,
-      width: 4,
+      width: 2,
       colors: ["#ffffff"],
     },
     legend: {
@@ -221,26 +278,58 @@ function SemiShareGauge({
         {/* 3영역: 그래프 (반원의 평평한 부분이 바닥에 맞춤) */}
         <div 
           ref={donutContainerRef}
-          className="h-full flex items-center justify-center relative overflow-hidden" 
+          className="h-full flex flex-col relative" 
         >
-          <div
-            className="absolute flex items-center justify-center"
-            style={{
-              // 도넛을 20% 크게: 그래프 높이 = cardHeight * 2 * 0.8 * 1.2
-              // 컨테이너 높이(140px) - 그래프 반지름(134.4px) = 5.6px
-              // 그래프 중심을 5.6px에 두면 반원의 평평한 부분이 바닥(140px)에 맞춰짐
-              top: `${cardHeight - (cardHeight * 2 * 0.8 * 1.2) / 2}px`,
-              left: '50%',
-              transform: 'translateX(-50%)',
-            }}
-          >
-            <ReactApexChart
-              options={options}
-              series={series}
-              type="donut"
-              width={donutWidth * 0.8 * 1.2}
-              height={cardHeight * 2 * 0.8 * 1.2}
-            />
+          {/* 그래프 영역 - 이전 위치 유지 */}
+          <div className="flex-1 relative">
+            <div
+              className="absolute flex items-center justify-center"
+              style={{
+                // 도넛을 20% 크게: 그래프 높이 = cardHeight * 2 * 0.8 * 1.2
+                // 컨테이너 높이(140px) - 그래프 반지름(134.4px) = 5.6px
+                // 그래프 중심을 5.6px에 두면 반원의 평평한 부분이 바닥(140px)에 맞춰짐
+                top: `${cardHeight - (cardHeight * 2 * 0.8 * 1.2) / 2}px`,
+                left: '50%',
+                transform: 'translateX(-50%)',
+              }}
+            >
+              <ReactApexChart
+                options={options}
+                series={series}
+                type="donut"
+                width={donutWidth * 0.8 * 1.2}
+                height={cardHeight * 2 * 0.8 * 1.2}
+              />
+            </div>
+          </div>
+          
+          {/* 호버 정보 표시 영역 - 그래프 하단 고정 위치 */}
+          <div className="h-8 flex items-center justify-center gap-2">
+            {hoveredSegmentId ? (() => {
+              const hoveredSegment = segments.find((s) => s.id === hoveredSegmentId);
+              if (!hoveredSegment) return null;
+              
+              // 원본 비율 표시 (rawPct 사용)
+              const displayPct = Math.round(hoveredSegment.rawPct * 10) / 10; // 소수점 첫째자리까지
+              
+              return (
+                <div 
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md shadow-sm transition-all duration-200"
+                  style={{ backgroundColor: `${hoveredSegment.color}15` }}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: hoveredSegment.color }}
+                  />
+                  <span className="text-xs font-bold text-[var(--brand-b)]">
+                    {hoveredSegment.label}
+                  </span>
+                  <span className="text-xs font-extrabold text-[var(--brand-b)]">
+                    {displayPct}%
+                  </span>
+                </div>
+              );
+            })() : null}
           </div>
         </div>
 
@@ -443,6 +532,62 @@ const STEP2_ALL_ITEMS = [
   { id: "env-08", label: "분리배출장을 활용한 자원순환 교육 프로그램 운영", category: "학교 환경 조성" },
 ];
 
+// 하단 카드들을 안전하게 렌더링하는 컴포넌트
+function BottomCards({ step2Selections }: { step2Selections: Record<string, boolean> }) {
+  try {
+    const safeSelections = step2Selections && typeof step2Selections === "object" ? step2Selections : {};
+    
+    const dailyItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 행동의 일상화");
+    const cultureItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 문화 확산");
+    const envItems = STEP2_ALL_ITEMS.filter((item) => item.category === "학교 환경 조성");
+
+    const getStats = (items: typeof STEP2_ALL_ITEMS) => {
+      try {
+        const selectedCount = items.filter((item) => Boolean(safeSelections[item.id])).length;
+        const totalCount = items.length;
+        const recommendedItems = items
+          .filter((item) => !safeSelections[item.id])
+          .map((item) => (item?.label || "").trim())
+          .filter((label) => label.length > 0);
+        return { selectedCount, totalCount, recommendedItems };
+      } catch (error) {
+        console.error("Error in getStats:", error);
+        return { selectedCount: 0, totalCount: items.length || 0, recommendedItems: [] };
+      }
+    };
+
+    const daily = getStats(dailyItems);
+    const culture = getStats(cultureItems);
+    const env = getStats(envItems);
+
+    return (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <ActionProgressCard
+          title="실천 행동"
+          selectedCount={daily.selectedCount}
+          totalCount={daily.totalCount}
+          recommendedItems={daily.recommendedItems}
+        />
+        <ActionProgressCard
+          title="실천 문화"
+          selectedCount={culture.selectedCount}
+          totalCount={culture.totalCount}
+          recommendedItems={culture.recommendedItems}
+        />
+        <ActionProgressCard
+          title="환경 구성"
+          selectedCount={env.selectedCount}
+          totalCount={env.totalCount}
+          recommendedItems={env.recommendedItems}
+        />
+      </div>
+    );
+  } catch (error) {
+    console.error("Error in BottomCards:", error);
+    return null; // 에러 발생 시 카드 숨김
+  }
+}
+
 // 원형 진행 표시 카드 컴포넌트 (이미지 형식과 동일)
 function ActionProgressCard({
   title,
@@ -455,13 +600,18 @@ function ActionProgressCard({
   totalCount: number;
   recommendedItems: string[];
 }) {
-  const percentage = totalCount > 0 ? Math.round((selectedCount / totalCount) * 100) : 0;
+  // 안전한 값 검증
+  const safeSelectedCount = Number.isFinite(selectedCount) ? Math.max(0, Math.floor(selectedCount)) : 0;
+  const safeTotalCount = Number.isFinite(totalCount) && totalCount > 0 ? Math.max(1, Math.floor(totalCount)) : 0;
+  const safeRecommendedItems = Array.isArray(recommendedItems) ? recommendedItems : [];
+  
+  const percentage = safeTotalCount > 0 ? Math.round((safeSelectedCount / safeTotalCount) * 100) : 0;
   const r = 42;
   const c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, percentage));
   const dash = (clamped / 100) * c;
 
-  const allCompleted = selectedCount === totalCount && totalCount > 0;
+  const allCompleted = safeSelectedCount === safeTotalCount && safeTotalCount > 0;
 
   // 0%: 갈색 (#4b4629 = rgb(75, 70, 41)), 100%: 연두색 (#b9d532 = rgb(185, 213, 50))
   // 퍼센티지에 따라 RGB 값을 보간
@@ -510,7 +660,7 @@ function ActionProgressCard({
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <div className="text-3xl font-black text-[var(--brand-b)] leading-none">
-              {selectedCount}/{totalCount}
+              {safeSelectedCount}/{safeTotalCount}
             </div>
           </div>
         </div>
@@ -524,14 +674,17 @@ function ActionProgressCard({
             <div className="text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)]">
               모든 과제를 달성했습니다.
             </div>
-          ) : recommendedItems.length > 0 ? (
+          ) : safeRecommendedItems.length > 0 ? (
             <ul className="space-y-2 text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)] pl-6">
-              {recommendedItems.map((item, idx) => (
-                <li key={idx} className="flex gap-2">
-                  <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:rgba(75,70,41,0.35)]" />
-                  <span className="min-w-0">{item}</span>
-                </li>
-              ))}
+              {safeRecommendedItems.map((item, idx) => {
+                const safeItem = typeof item === "string" ? item : String(item || "");
+                return (
+                  <li key={idx} className="flex gap-2">
+                    <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:rgba(75,70,41,0.35)]" />
+                    <span className="min-w-0">{safeItem}</span>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </div>
@@ -553,6 +706,7 @@ export function Step3Overview() {
     water?: string;
   } | null>(null);
   const [step2Selections, setStep2Selections] = useState<Record<string, boolean>>({});
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -570,9 +724,15 @@ export function Step3Overview() {
         gas: e.gasWon ?? "",
         water: e.waterWon ?? "",
       });
-      setStep2Selections(loadStep2FromSession());
+      const step2Data = loadStep2FromSession();
+      setStep2Selections(step2Data);
+      // 데이터 로드 완료 후 약간의 지연을 두고 카드 렌더링 허용
+      setTimeout(() => {
+        setIsDataLoaded(true);
+      }, 100);
     } catch (error) {
       console.error("Error loading step data:", error);
+      setIsDataLoaded(true); // 에러 발생해도 로딩 완료로 표시
     }
   }, []);
 
@@ -663,44 +823,7 @@ export function Step3Overview() {
     return Math.round(savedKg / 6.6); // 소나무 그루 수
   }, [carbonStats, parts]);
 
-  // Step2 선택 상태 기반으로 카테고리별 실천행동 통계 계산
-  const categoryStats = useMemo(() => {
-    if (!step2Selections || typeof step2Selections !== "object") {
-      return {
-        daily: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
-        culture: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
-        env: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
-      };
-    }
-
-    try {
-      const dailyItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 행동의 일상화");
-      const cultureItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 문화 확산");
-      const envItems = STEP2_ALL_ITEMS.filter((item) => item.category === "학교 환경 조성");
-
-      const getCategoryStats = (items: typeof STEP2_ALL_ITEMS) => {
-        const selectedCount = items.filter((item) => Boolean(step2Selections[item.id])).length;
-        const totalCount = items.length;
-        const unselectedItems = items
-          .filter((item) => !step2Selections[item.id])
-          .map((item) => item.label);
-        return { selectedCount, totalCount, recommendedItems: unselectedItems };
-      };
-
-      return {
-        daily: getCategoryStats(dailyItems),
-        culture: getCategoryStats(cultureItems),
-        env: getCategoryStats(envItems),
-      };
-    } catch (error) {
-      console.error("Error calculating category stats:", error);
-      return {
-        daily: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
-        culture: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
-        env: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
-      };
-    }
-  }, [step2Selections]);
+  // Step2 선택 상태 기반으로 카테고리별 실천행동 통계 계산 (직접 계산으로 변경)
 
   return (
     <div className="w-full space-y-6">
@@ -740,35 +863,8 @@ export function Step3Overview() {
         </div>
       </div>
 
-      {/* Bottom cards */}
-      {categoryStats && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {categoryStats.daily && (
-            <ActionProgressCard
-              title="실천 행동"
-              selectedCount={categoryStats.daily.selectedCount}
-              totalCount={categoryStats.daily.totalCount}
-              recommendedItems={categoryStats.daily.recommendedItems || []}
-            />
-          )}
-          {categoryStats.culture && (
-            <ActionProgressCard
-              title="실천 문화"
-              selectedCount={categoryStats.culture.selectedCount}
-              totalCount={categoryStats.culture.totalCount}
-              recommendedItems={categoryStats.culture.recommendedItems || []}
-            />
-          )}
-          {categoryStats.env && (
-            <ActionProgressCard
-              title="환경 구성"
-              selectedCount={categoryStats.env.selectedCount}
-              totalCount={categoryStats.env.totalCount}
-              recommendedItems={categoryStats.env.recommendedItems || []}
-            />
-          )}
-        </div>
-      )}
+      {/* Bottom cards - 데이터 로드 완료 후에만 렌더링 */}
+      {isDataLoaded && <BottomCards step2Selections={step2Selections} />}
     </div>
   );
 }
