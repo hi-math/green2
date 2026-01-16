@@ -98,25 +98,34 @@ function Toggle({
   return (
     <button
       type="button"
-      role="switch"
+      role="checkbox"
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={[
-        "relative inline-flex h-5 w-9 items-center rounded-full border transition",
-        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+        "relative inline-flex h-5 w-5 items-center justify-center rounded-md border-2 transition-all duration-200",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:scale-110 active:scale-95",
         checked
-          ? "border-[color:rgba(185,213,50,0.55)] bg-[color:rgba(185,213,50,0.55)]"
-          : "border-slate-200 bg-slate-100",
+          ? "border-[color:rgba(185,213,50,1)] bg-[color:rgba(185,213,50,0.35)] shadow-md ring-2 ring-[color:rgba(185,213,50,0.3)]"
+          : "border-slate-300 bg-white hover:border-slate-400",
       ].join(" ")}
     >
-      <span
-        aria-hidden="true"
-        className={[
-          "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition",
-          checked ? "translate-x-4" : "translate-x-1",
-        ].join(" ")}
-      />
+      {checked && (
+        <svg
+          className="h-3.5 w-3.5 text-[color:rgba(185,213,50,1)] drop-shadow-sm"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3.5"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M5 13l4 4L19 7"
+          />
+        </svg>
+      )}
     </button>
   );
 }
@@ -144,19 +153,31 @@ function Step2Section({
       ].join(" ")}
     >
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="min-w-0 truncate text-[14px] font-bold text-[var(--brand-b)]">
+        <div className="min-w-0 truncate text-sm font-extrabold text-[var(--brand-b)]">
           {card.title}
         </div>
       </div>
 
       <div className="space-y-1">
-        {card.items.map((it) => (
+        {card.items.map((it) => {
+          const isChecked = Boolean(selected[it.id]);
+          return (
           <div key={it.id} className="flex items-center justify-between gap-2 py-3 pr-2">
-            <div className="min-w-0 flex-1 text-[12px] font-normal leading-4 tracking-tight text-[color:rgba(75,70,41,0.92)]">
+            <div className={[
+              "min-w-0 flex-1 text-[12px] leading-4 tracking-tight",
+              isChecked 
+                ? "font-semibold text-[color:rgba(75,70,41,1)]" 
+                : "font-normal text-[color:rgba(75,70,41,0.92)]"
+            ].join(" ")}>
               <div className="flex min-w-0 items-center gap-2 pl-1">
                 <span
                   aria-hidden="true"
-                  className="mt-[1px] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:rgba(75,70,41,0.45)]"
+                  className={[
+                    "mt-[1px] h-1.5 w-1.5 shrink-0 rounded-full",
+                    isChecked
+                      ? "bg-[color:rgba(185,213,50,0.8)]"
+                      : "bg-[color:rgba(75,70,41,0.45)]"
+                  ].join(" ")}
                 />
                 <span
                   className={[
@@ -190,9 +211,10 @@ function Step2Section({
                 ) : null}
               </div>
             </div>
-            <Toggle checked={Boolean(selected[it.id])} onChange={() => onToggle(it.id)} />
+            <Toggle checked={isChecked} onChange={() => onToggle(it.id)} />
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -59,10 +59,10 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
                     "flex h-8 w-8 items-center justify-center rounded-xl border bg-white transition",
                     onStepClick ? "cursor-pointer hover:-translate-y-[1px]" : "",
                     isCurrent
-                      ? "border-[color:rgba(185,213,50,0.55)] ring-2 ring-[color:rgba(185,213,50,0.35)]"
+                      ? "border-[color:rgba(185,213,50,0.8)] ring-2 ring-[color:rgba(185,213,50,0.35)]"
                       : isDone
-                        ? "border-[color:rgba(185,213,50,0.35)]"
-                        : "border-slate-200",
+                        ? "border-[color:rgba(185,213,50,0.6)]"
+                        : "border-slate-400",
                   ].join(" ")}
                   onClick={() => onStepClick?.(stepNum)}
                   title={label.replace("\n", " ")}

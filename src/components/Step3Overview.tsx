@@ -110,8 +110,11 @@ function SemiShareGauge({
       };
     });
 
-    const smallSegments = segments.filter((s) => s.pct > 0 && s.pct < MIN_PCT);
-    const largeSegments = segments.filter((s) => s.pct >= MIN_PCT);
+    // 값이 0보다 크면 (아무리 작아도) 최소 비율을 보장해야 함
+    // pct가 0이지만 value > 0인 경우도 작은 세그먼트로 처리
+    const smallSegments = segments.filter((s) => s.value > 0 && (s.pct === 0 || s.pct < MIN_PCT));
+    const largeSegments = segments.filter((s) => s.value > 0 && s.pct >= MIN_PCT);
+    const zeroSegments = segments.filter((s) => s.value === 0);
     
     if (smallSegments.length === 0) {
       // 작은 세그먼트가 없으면 displayPct = pct
@@ -130,7 +133,13 @@ function SemiShareGauge({
     const scaleFactor = largeSegmentsTotalPct > 0 ? availablePct / largeSegmentsTotalPct : 1;
     
     return segments.map((seg) => {
-      const displayPct = seg.pct > 0 && seg.pct < MIN_PCT 
+      // 값이 0이면 displayPct도 0
+      if (seg.value === 0) {
+        return { ...seg, displayPct: 0 };
+      }
+      
+      // 값이 있지만 pct가 0이거나 MIN_PCT 미만이면 최소 비율 보장
+      const displayPct = (seg.pct === 0 || seg.pct < MIN_PCT)
         ? MIN_PCT 
         : seg.pct >= MIN_PCT 
         ? seg.pct * scaleFactor 
@@ -191,6 +200,13 @@ function SemiShareGauge({
         dataPointMouseLeave: () => {
           setHoveredSegmentId(null);
         },
+        dataPointSelection: () => {
+          // 클릭 이벤트 비활성화
+          return false;
+        },
+      },
+      selection: {
+        enabled: false,
       },
     },
     plotOptions: {
@@ -260,7 +276,7 @@ function SemiShareGauge({
       <div className="grid grid-cols-[28%_47%_25%] gap-2" style={{ height: `${cardHeight}px` }}>
         {/* 2영역: 총 탄소배출량 */}
         <div className="h-full flex flex-col pt-2">
-          <div className="text-base font-semibold text-[var(--brand-b)] text-left mb-3">
+          <div className="text-sm font-extrabold text-[var(--brand-b)] text-left mb-3">
             총 탄소배출량
           </div>
           <div className="flex-1 flex flex-col items-center justify-center">
@@ -271,7 +287,7 @@ function SemiShareGauge({
               <CountUpNumber value={totalValue} duration={1500} />
             </div>
             <div className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.6)] text-center">
-              kgCO2eq
+              kgCO<sub>2</sub>eq
             </div>
           </div>
         </div>
@@ -377,7 +393,7 @@ function SemiShareGauge({
                     {Math.round(seg.value).toLocaleString("ko-KR")}
                   </div>
                   <div className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.6)] text-center">
-                    kgCO2eq
+                    kgCO<sub>2</sub>eq
                   </div>
                 </div>
               </div>
@@ -449,7 +465,7 @@ function RecCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 p-5 shadow-sm backdrop-blur">
       <div className="mb-4">
-        <span className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-base font-extrabold text-[var(--brand-b)]">
+        <span className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-extrabold text-[var(--brand-b)]">
           {title}
         </span>
       </div>
@@ -631,7 +647,7 @@ function ActionProgressCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
       <div className="mb-4">
-        <h3 className="text-lg font-black text-[var(--brand-b)] tracking-tight text-left">
+        <h3 className="text-sm font-extrabold text-[var(--brand-b)] tracking-tight text-left">
           {title}
         </h3>
       </div>
@@ -853,9 +869,9 @@ export function Step3Overview() {
           <div className="text-sm font-semibold text-[color:rgba(75,70,41,0.85)] leading-relaxed text-left">
             {carbonStats.kind === "value" ? (
               <>
-                우리학교의 탄소 배출량은 축구장 <span className="text-2xl font-black text-red-500 mx-1">{fmt0.format(Math.round(footballFieldCount))}</span>개 면적의 소나무 숲이 1년 동안 흡수해야 하는 양과 같습니다.
+                우리학교의 탄소 배출량은 축구장 <span className="text-2xl font-black mx-1" style={{ color: "#C97D60" }}>{fmt0.format(Math.round(footballFieldCount))}</span>개 면적의 소나무 숲이 1년 동안 흡수 하는 탄소 양과 같습니다.
                 <br />
-                만약 우리학교가 에어컨 온도를 1℃만 높인다면, 연간 소나무 <span className="text-2xl font-black text-red-500 mx-1">{fmt0.format(treeCount)}</span>그루를 심는 것과 같은 효과를 낼 수 있습니다.
+                만약 우리학교 에어컨 설정 온도를 1℃ 높인다면, 연간 소나무 <span className="text-2xl font-black mx-1" style={{ color: "#C97D60" }}>{fmt0.format(treeCount)}</span>그루를 심는 것과 같은 효과를 낼 수 있습니다.
               </>
             ) : (
               "탄소배출량이 입력되지 않았습니다."
