@@ -7,7 +7,7 @@ export default function RootRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/1");
+    router.replace("/login");
   }, [router]);
 
   return null;
