@@ -1,5 +1,3 @@
-"use client";
-
 import { PageHeader } from "../../../components/PageHeader";
 import { Step3Overview } from "../../../components/Step3Overview";
 

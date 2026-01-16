@@ -318,6 +318,7 @@ const STEP1_STORAGE_KEY = "carbonapp.step1";
 const STEP2_STORAGE_KEY = "carbonapp.step2";
 
 function loadStep1FromSession(): Step1Snapshot | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(STEP1_STORAGE_KEY);
     if (!raw) return null;
@@ -328,6 +329,7 @@ function loadStep1FromSession(): Step1Snapshot | null {
 }
 
 function loadStep2FromSession(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
   try {
     const raw = sessionStorage.getItem(STEP2_STORAGE_KEY);
     if (!raw) return {};
@@ -553,20 +555,25 @@ export function Step3Overview() {
   const [step2Selections, setStep2Selections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const snap = loadStep1FromSession();
-    const e = snap?.emissions ?? {};
-    setSchoolName(String(snap?.basic?.schoolName ?? "").trim());
-    setBasicNums({
-      students: String(snap?.basic?.studentCount ?? "").trim(),
-      staff: String(snap?.basic?.staffCount ?? "").trim(),
-      areaM2: String(snap?.basic?.schoolAreaM2 ?? "").trim(),
-    });
-    setEmissions({
-      electric: e.electricWon ?? "",
-      gas: e.gasWon ?? "",
-      water: e.waterWon ?? "",
-    });
-    setStep2Selections(loadStep2FromSession());
+    if (typeof window === "undefined") return;
+    try {
+      const snap = loadStep1FromSession();
+      const e = snap?.emissions ?? {};
+      setSchoolName(String(snap?.basic?.schoolName ?? "").trim());
+      setBasicNums({
+        students: String(snap?.basic?.studentCount ?? "").trim(),
+        staff: String(snap?.basic?.staffCount ?? "").trim(),
+        areaM2: String(snap?.basic?.schoolAreaM2 ?? "").trim(),
+      });
+      setEmissions({
+        electric: e.electricWon ?? "",
+        gas: e.gasWon ?? "",
+        water: e.waterWon ?? "",
+      });
+      setStep2Selections(loadStep2FromSession());
+    } catch (error) {
+      console.error("Error loading step data:", error);
+    }
   }, []);
 
   const carbonStats = useMemo(() => {
@@ -658,24 +665,41 @@ export function Step3Overview() {
 
   // Step2 선택 상태 기반으로 카테고리별 실천행동 통계 계산
   const categoryStats = useMemo(() => {
-    const dailyItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 행동의 일상화");
-    const cultureItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 문화 확산");
-    const envItems = STEP2_ALL_ITEMS.filter((item) => item.category === "학교 환경 조성");
+    if (!step2Selections || typeof step2Selections !== "object") {
+      return {
+        daily: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
+        culture: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
+        env: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
+      };
+    }
 
-    const getCategoryStats = (items: typeof STEP2_ALL_ITEMS) => {
-      const selectedCount = items.filter((item) => step2Selections[item.id]).length;
-      const totalCount = items.length;
-      const unselectedItems = items
-        .filter((item) => !step2Selections[item.id])
-        .map((item) => item.label);
-      return { selectedCount, totalCount, recommendedItems: unselectedItems };
-    };
+    try {
+      const dailyItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 행동의 일상화");
+      const cultureItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 문화 확산");
+      const envItems = STEP2_ALL_ITEMS.filter((item) => item.category === "학교 환경 조성");
 
-    return {
-      daily: getCategoryStats(dailyItems),
-      culture: getCategoryStats(cultureItems),
-      env: getCategoryStats(envItems),
-    };
+      const getCategoryStats = (items: typeof STEP2_ALL_ITEMS) => {
+        const selectedCount = items.filter((item) => Boolean(step2Selections[item.id])).length;
+        const totalCount = items.length;
+        const unselectedItems = items
+          .filter((item) => !step2Selections[item.id])
+          .map((item) => item.label);
+        return { selectedCount, totalCount, recommendedItems: unselectedItems };
+      };
+
+      return {
+        daily: getCategoryStats(dailyItems),
+        culture: getCategoryStats(cultureItems),
+        env: getCategoryStats(envItems),
+      };
+    } catch (error) {
+      console.error("Error calculating category stats:", error);
+      return {
+        daily: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
+        culture: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
+        env: { selectedCount: 0, totalCount: 0, recommendedItems: [] },
+      };
+    }
   }, [step2Selections]);
 
   return (
@@ -717,26 +741,34 @@ export function Step3Overview() {
       </div>
 
       {/* Bottom cards */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ActionProgressCard
-          title="실천 행동"
-          selectedCount={categoryStats.daily.selectedCount}
-          totalCount={categoryStats.daily.totalCount}
-          recommendedItems={categoryStats.daily.recommendedItems}
-        />
-        <ActionProgressCard
-          title="실천 문화"
-          selectedCount={categoryStats.culture.selectedCount}
-          totalCount={categoryStats.culture.totalCount}
-          recommendedItems={categoryStats.culture.recommendedItems}
-        />
-        <ActionProgressCard
-          title="환경 구성"
-          selectedCount={categoryStats.env.selectedCount}
-          totalCount={categoryStats.env.totalCount}
-          recommendedItems={categoryStats.env.recommendedItems}
-        />
-      </div>
+      {categoryStats && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {categoryStats.daily && (
+            <ActionProgressCard
+              title="실천 행동"
+              selectedCount={categoryStats.daily.selectedCount}
+              totalCount={categoryStats.daily.totalCount}
+              recommendedItems={categoryStats.daily.recommendedItems || []}
+            />
+          )}
+          {categoryStats.culture && (
+            <ActionProgressCard
+              title="실천 문화"
+              selectedCount={categoryStats.culture.selectedCount}
+              totalCount={categoryStats.culture.totalCount}
+              recommendedItems={categoryStats.culture.recommendedItems || []}
+            />
+          )}
+          {categoryStats.env && (
+            <ActionProgressCard
+              title="환경 구성"
+              selectedCount={categoryStats.env.selectedCount}
+              totalCount={categoryStats.env.totalCount}
+              recommendedItems={categoryStats.env.recommendedItems || []}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
