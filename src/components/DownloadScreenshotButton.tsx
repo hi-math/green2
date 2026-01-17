@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import jsPDF from 'jspdf';
 
 interface DownloadScreenshotButtonProps {
   url: string;
