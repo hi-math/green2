@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 스크린샷 전에 타이틀 추가
-        await page.evaluate((sel) => {
+        await page.evaluate((sel: string) => {
           const targetElement = document.querySelector(sel);
           if (targetElement) {
             const existingTitle = targetElement.querySelector('.screenshot-title');
