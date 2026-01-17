@@ -15,7 +15,8 @@ interface DownloadScreenshotButtonProps {
   onSuccess?: () => void;
   onError?: (error: Error) => void;
   disabled?: boolean;
-  format?: 'png' | 'pdf';
+  format?: 'png' | 'pdf' | 'jpeg';
+  imageFormat?: 'png' | 'jpeg'; // 스크린샷 이미지 포맷 (기본: jpeg)
 }
 
 interface ToastState {
@@ -36,6 +37,7 @@ export default function DownloadScreenshotButton({
   onError,
   disabled = false,
   format = 'png',
+  imageFormat = 'jpeg', // 기본 JPEG (빠르고 용량 작음)
 }: DownloadScreenshotButtonProps) {
   const [progress, setProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -243,11 +245,13 @@ export default function DownloadScreenshotButton({
 
     try {
       // 세션 데이터 수집
+      // ✅ 1️⃣ width/height는 레이아웃 기준으로 전달 (서버에서 800px로 최적화)
       const requestBody: any = {
         url,
         selector,
-        width,
-        height,
+        width, // 레이아웃 기준 (서버에서 viewport 800px로 처리)
+        height, // 레이아웃 기준
+        format: imageFormat, // jpeg 또는 png
       };
 
       if (sessionData) {
@@ -408,6 +412,7 @@ export default function DownloadScreenshotButton({
     downloadBlob,
     downloadAsPDF,
     format,
+    imageFormat,
     onSuccess,
     onError,
   ]);

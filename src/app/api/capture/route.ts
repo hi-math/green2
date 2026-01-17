@@ -4,6 +4,11 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const maxDuration = 30; // Vercel Pro 플랜 기준 (Hobby는 10초)
 
+// ✅ 캡쳐 최적화 상수
+const TARGET_WIDTH = 800; // 최종 출력 이미지 가로 크기
+const JPEG_QUALITY = 85; // JPEG 품질 (80-90 권장)
+const SELECTOR_TIMEOUT = 12000; // selector 대기 시간 (10-12초)
+
 // ✅ 2️⃣ puppeteer / chromium 설정: 환경별 분기 처리
 let puppeteer: any;
 let chromium: any;
@@ -25,8 +30,7 @@ async function getPuppeteer() {
       chromium = require('@sparticuz/chromium');
       if (chromium) {
         // ✅ @sparticuz/chromium 설정: 함수 호출이 아닌 boolean 대입 형태
-        // setGraphicsMode=true로 설정하면 안정성이 더 좋을 수 있음
-        chromium.setGraphicsMode = true; // 안정성 우선 (false일 때 페이지가 멈출 수 있음)
+        chromium.setGraphicsMode = true; // 안정성 우선
         chromium.setHeadlessMode = true;
       }
     } catch (error) {
@@ -67,11 +71,11 @@ function isAllowedUrl(url: string): boolean {
   }
 }
 
-// ✅ 1️⃣ selector 대기 로직: 안정화된 polling 방식
+// ✅ 1️⃣ selector 대기 로직: 안정화된 polling 방식 (타임아웃 단축)
 async function waitForSelectorStable(
   page: any,
   selector: string,
-  timeout: number = 45000
+  timeout: number = SELECTOR_TIMEOUT
 ): Promise<boolean> {
   const startTime = Date.now();
   const pollInterval = 500; // 500ms마다 확인
@@ -190,10 +194,11 @@ async function logPageDebugInfo(page: any, selector: string) {
 
 export async function POST(request: NextRequest) {
   let browser: any = null;
+  const startTime = Date.now();
   
   try {
     const body = await request.json();
-    const { url, selector, width = 1900, height = 1200, sessionData } = body;
+    const { url, selector, width = 1900, height = 1200, sessionData, format = 'jpeg' } = body;
 
     // ✅ 3️⃣ 보안: URL 검증
     if (!url || typeof url !== 'string') {
@@ -214,10 +219,15 @@ export async function POST(request: NextRequest) {
     // ✅ 2️⃣ puppeteer 설정
     const puppeteerInstance = await getPuppeteer();
     
+    // ✅ 1️⃣ viewport를 800px 기준으로 설정 (방법 B: 더 빠름)
+    // 레이아웃은 원본 크기로 렌더링하되, viewport를 800px로 제한하여 메모리/처리 시간 절약
+    const viewportWidth = TARGET_WIDTH;
+    const viewportHeight = Math.round((height / width) * TARGET_WIDTH); // 비율 유지
+    
     let browserConfig: any = {
       defaultViewport: {
-        width: Math.min(width, 1920), // 최대 너비 제한
-        height: Math.min(height, 1080), // 최대 높이 제한
+        width: viewportWidth,
+        height: viewportHeight,
         deviceScaleFactor: 1,
       },
       headless: true,
@@ -274,17 +284,64 @@ export async function POST(request: NextRequest) {
         executablePath: executablePath.substring(0, 50) + '...',
         argsCount: browserConfig.args.length,
         headless: browserConfig.headless,
+        viewport: `${viewportWidth}x${viewportHeight}`,
       });
     }
 
+    const browserLaunchTime = Date.now();
     // ✅ 2️⃣ 브라우저 실행 (타임아웃 설정)
     browser = await puppeteerInstance.launch(browserConfig);
+    console.log(`브라우저 실행 시간: ${Date.now() - browserLaunchTime}ms`);
 
     try {
       const page = await browser.newPage();
 
+      // ✅ 4️⃣ 리소스 차단: 불필요한 리소스 로딩 방지
+      await page.setRequestInterception(true);
+      page.on('request', (req: any) => {
+        const resourceType = req.resourceType();
+        const url = req.url();
+        
+        // 차단할 리소스 타입 및 URL 패턴
+        const blockedTypes = ['image', 'media', 'font', 'websocket'];
+        const blockedPatterns = [
+          /analytics/,
+          /tracking/,
+          /ads?/,
+          /advertisement/,
+          /doubleclick/,
+          /google-analytics/,
+          /googletagmanager/,
+          /facebook\.net/,
+          /youtube\.com\/embed/,
+          /\.mp4$/,
+          /\.webm$/,
+        ];
+        
+        // 큰 이미지 제외 (필요한 이미지만 허용)
+        if (resourceType === 'image' && !url.includes('data:image')) {
+          // data URI 이미지는 허용, 외부 이미지는 차단
+          req.abort();
+          return;
+        }
+        
+        // 차단 패턴 확인
+        if (blockedPatterns.some(pattern => pattern.test(url))) {
+          req.abort();
+          return;
+        }
+        
+        // 차단 타입 확인 (font는 제외 - 폰트는 필요할 수 있음)
+        if (blockedTypes.includes(resourceType) && resourceType !== 'font') {
+          req.abort();
+          return;
+        }
+        
+        req.continue();
+      });
+
       // ✅ 6️⃣ 타임아웃 설정 (Vercel 제한 고려)
-      page.setDefaultTimeout(25000); // maxDuration보다 약간 작게
+      page.setDefaultTimeout(25000);
       page.setDefaultNavigationTimeout(25000);
 
       // ✅ 4️⃣ 세션 데이터 주입: page.evaluateOnNewDocument 사용 (navigation 전에 실행)
@@ -304,32 +361,37 @@ export async function POST(request: NextRequest) {
         }, typedSessionData);
       }
 
-      // ✅ 1️⃣ 페이지 로드: networkidle2로 안정화
+      const pageGotoTime = Date.now();
+      // ✅ 4️⃣ 페이지 로드: networkidle2로 안정화
       await page.goto(url, {
         waitUntil: 'networkidle2',
-        timeout: 30000,
+        timeout: 25000,
       });
+      console.log(`페이지 로드 시간: ${Date.now() - pageGotoTime}ms`);
 
-      // ✅ 1️⃣ 추가 안정화 대기
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // ✅ 4️⃣ 추가 안정화 대기 (최소화)
+      await new Promise(resolve => setTimeout(resolve, 500));
 
+      const screenshotTime = Date.now();
       let screenshot: Buffer;
       let selectorFound = false;
+      const imageType = format === 'png' ? 'png' : 'jpeg';
 
       if (selector) {
-        // ✅ 1️⃣ 안정화된 selector 대기 로직
+        // ✅ 3️⃣ 안정화된 selector 대기 로직 (타임아웃 단축)
         console.log(`Selector [${selector}] 대기 시작...`);
-        selectorFound = await waitForSelectorStable(page, selector, 45000);
+        selectorFound = await waitForSelectorStable(page, selector, SELECTOR_TIMEOUT);
         
         if (!selectorFound) {
-          // ✅ 2️⃣ selector 미존재 시 디버깅 로그
+          // ✅ 3️⃣ selector 미존재 시 디버깅 로그
           console.error(`Selector [${selector}]를 찾을 수 없습니다.`);
           await logPageDebugInfo(page, selector);
           
           // ✅ 3️⃣ Fallback: fullPage screenshot으로 대체
           console.warn('Selector를 찾을 수 없어 fullPage screenshot으로 fallback합니다.');
           screenshot = (await page.screenshot({
-            type: 'png',
+            type: imageType,
+            quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
             fullPage: true,
           })) as Buffer;
         } else {
@@ -341,7 +403,8 @@ export async function POST(request: NextRequest) {
             // 예외 상황: polling에서는 찾았는데 실제로는 없음
             console.warn('Selector polling에서는 찾았지만 실제 element가 없습니다. fallback합니다.');
             screenshot = (await page.screenshot({
-              type: 'png',
+              type: imageType,
+              quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
               fullPage: true,
             })) as Buffer;
           } else {
@@ -371,12 +434,14 @@ export async function POST(request: NextRequest) {
             if (!boundingBox) {
               console.warn('요소의 크기를 측정할 수 없습니다. fallback합니다.');
               screenshot = (await page.screenshot({
-                type: 'png',
+                type: imageType,
+                quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
                 fullPage: true,
               })) as Buffer;
             } else {
               screenshot = (await element.screenshot({
-                type: 'png',
+                type: imageType,
+                quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
               })) as Buffer;
             }
           }
@@ -384,21 +449,29 @@ export async function POST(request: NextRequest) {
       } else {
         // selector가 없는 경우 전체 페이지 캡처
         screenshot = (await page.screenshot({
-          type: 'png',
+          type: imageType,
+          quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
           fullPage: false,
         })) as Buffer;
       }
+      
+      console.log(`스크린샷 캡처 시간: ${Date.now() - screenshotTime}ms`);
 
       // ✅ 5️⃣ 브라우저 종료 (메모리 누수 방지)
       await browser.close();
       browser = null;
 
-      // ✅ 5️⃣ API 응답: Buffer를 Uint8Array로 변환하여 NextResponse에 전달
+      const totalTime = Date.now() - startTime;
+      console.log(`총 처리 시간: ${totalTime}ms`);
+
+      // ✅ 2️⃣ API 응답: Buffer를 Uint8Array로 변환하여 NextResponse에 전달
       const imageBuffer = new Uint8Array(screenshot);
+      const contentType = imageType === 'png' ? 'image/png' : 'image/jpeg';
+      
       return new NextResponse(imageBuffer, {
         status: 200,
         headers: {
-          'Content-Type': 'image/png',
+          'Content-Type': contentType,
           'Content-Length': screenshot.length.toString(),
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -421,6 +494,7 @@ export async function POST(request: NextRequest) {
     // ✅ 7️⃣ 에러 처리: 상세 로깅
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
+    const totalTime = Date.now() - startTime;
     
     console.error('스크린샷 생성 실패:', {
       message: errorMessage,
@@ -428,6 +502,7 @@ export async function POST(request: NextRequest) {
       isDev,
       hasChromium: !!chromium,
       hasPuppeteer: !!puppeteer,
+      totalTime: `${totalTime}ms`,
     });
     
     // ✅ 7️⃣ 사용자 친화적 에러 메시지
