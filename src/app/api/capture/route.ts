@@ -81,7 +81,21 @@ async function waitForSelectorStable(
       // selector 존재 여부 확인
       const exists = await page.evaluate((sel: string) => {
         const element = document.querySelector(sel);
-        return element !== null && element.offsetParent !== null; // visible check
+        if (!element) return false;
+        
+        // HTMLElement로 타입 좁히기 및 visible 체크
+        const htmlElement = element as HTMLElement;
+        const style = window.getComputedStyle(htmlElement);
+        const rect = htmlElement.getBoundingClientRect();
+        
+        // visible 체크: display가 none이 아니고, 크기가 있고, 화면에 보이는 경우
+        return (
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.opacity !== '0' &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
       }, selector);
       
       if (exists) {
@@ -134,12 +148,27 @@ async function logPageDebugInfo(page: any, selector: string) {
   try {
     const debugInfo = await page.evaluate((sel: string) => {
       const element = document.querySelector(sel);
+      let selectorVisible = false;
+      
+      if (element) {
+        const htmlElement = element as HTMLElement;
+        const style = window.getComputedStyle(htmlElement);
+        const rect = htmlElement.getBoundingClientRect();
+        selectorVisible = (
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.opacity !== '0' &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
+      }
+      
       return {
         url: window.location.href,
         title: document.title,
         readyState: document.readyState,
         selectorExists: element !== null,
-        selectorVisible: element !== null && element.offsetParent !== null,
+        selectorVisible: selectorVisible,
         bodyText: document.body?.innerText?.substring(0, 500) || '',
         html: document.documentElement.outerHTML.substring(0, 2000),
       };
