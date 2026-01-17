@@ -148,11 +148,16 @@ export async function POST(request: NextRequest) {
           timeout: 25000,
         });
 
-        await page.evaluate((data) => {
-          Object.keys(data).forEach((key) => {
-            sessionStorage.setItem(key, data[key]);
+        // 타입 명시: sessionData를 Record<string, string>으로 명확히 지정
+        const typedSessionData: Record<string, string> = sessionData as Record<string, string>;
+        await page.evaluate((data: Record<string, string>) => {
+          Object.keys(data).forEach((key: string) => {
+            const value = data[key];
+            // sessionStorage.setItem은 string만 받으므로 안전하게 변환
+            const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+            sessionStorage.setItem(key, stringValue);
           });
-        }, sessionData);
+        }, typedSessionData);
 
         await page.reload({
           waitUntil: 'networkidle2',
