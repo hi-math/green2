@@ -232,8 +232,9 @@ export async function POST(request: NextRequest) {
       await browser.close();
       browser = null;
 
-      // ✅ 5️⃣ API 응답: 명확한 헤더 설정
-      return new NextResponse(screenshot, {
+      // ✅ 5️⃣ API 응답: Buffer를 Uint8Array로 변환하여 NextResponse에 전달
+      const imageBuffer = new Uint8Array(screenshot);
+      return new NextResponse(imageBuffer, {
         status: 200,
         headers: {
           'Content-Type': 'image/png',
