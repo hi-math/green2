@@ -67,6 +67,98 @@ function isAllowedUrl(url: string): boolean {
   }
 }
 
+// ✅ 1️⃣ selector 대기 로직: 안정화된 polling 방식
+async function waitForSelectorStable(
+  page: any,
+  selector: string,
+  timeout: number = 45000
+): Promise<boolean> {
+  const startTime = Date.now();
+  const pollInterval = 500; // 500ms마다 확인
+  
+  while (Date.now() - startTime < timeout) {
+    try {
+      // selector 존재 여부 확인
+      const exists = await page.evaluate((sel: string) => {
+        const element = document.querySelector(sel);
+        return element !== null && element.offsetParent !== null; // visible check
+      }, selector);
+      
+      if (exists) {
+        // 추가 안정화: requestAnimationFrame 2회 대기
+        await page.evaluate(() => {
+          return new Promise<void>((resolve) => {
+            let frameCount = 0;
+            const checkFrame = () => {
+              requestAnimationFrame(() => {
+                frameCount++;
+                if (frameCount >= 2) {
+                  resolve();
+                } else {
+                  checkFrame();
+                }
+              });
+            };
+            checkFrame();
+          });
+        });
+        
+        // 폰트 로딩 대기
+        await page.evaluate(() => {
+          return document.fonts?.ready || Promise.resolve();
+        });
+        
+        // 최종 확인
+        const finalExists = await page.evaluate((sel: string) => {
+          return document.querySelector(sel) !== null;
+        }, selector);
+        
+        if (finalExists) {
+          return true;
+        }
+      }
+    } catch (error) {
+      // 에러 발생 시 계속 시도
+      console.warn('Selector polling 중 에러:', error);
+    }
+    
+    // 다음 polling까지 대기
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  
+  return false;
+}
+
+// ✅ 2️⃣ selector 미존재 시 디버깅 로그
+async function logPageDebugInfo(page: any, selector: string) {
+  try {
+    const debugInfo = await page.evaluate((sel: string) => {
+      const element = document.querySelector(sel);
+      return {
+        url: window.location.href,
+        title: document.title,
+        readyState: document.readyState,
+        selectorExists: element !== null,
+        selectorVisible: element !== null && element.offsetParent !== null,
+        bodyText: document.body?.innerText?.substring(0, 500) || '',
+        html: document.documentElement.outerHTML.substring(0, 2000),
+      };
+    }, selector);
+    
+    console.error('=== Selector 디버깅 정보 ===');
+    console.error('URL:', debugInfo.url);
+    console.error('Title:', debugInfo.title);
+    console.error('ReadyState:', debugInfo.readyState);
+    console.error(`Selector [${selector}] 존재 여부:`, debugInfo.selectorExists);
+    console.error(`Selector [${selector}] 표시 여부:`, debugInfo.selectorVisible);
+    console.error('Body Text (앞 500자):', debugInfo.bodyText);
+    console.error('HTML (앞 2000자):', debugInfo.html);
+    console.error('===========================');
+  } catch (error) {
+    console.error('디버깅 정보 수집 실패:', error);
+  }
+}
+
 export async function POST(request: NextRequest) {
   let browser: any = null;
   
@@ -183,64 +275,85 @@ export async function POST(request: NextRequest) {
         }, typedSessionData);
       }
 
-      // ✅ 4️⃣ 페이지 로드 (sessionStorage는 이미 주입됨)
+      // ✅ 1️⃣ 페이지 로드: networkidle2로 안정화
       await page.goto(url, {
         waitUntil: 'networkidle2',
-        timeout: 25000,
+        timeout: 30000,
       });
 
-      // ✅ 6️⃣ 폰트 및 리소스 로딩 보장
-      await page.evaluate(() => {
-        return document.fonts?.ready || Promise.resolve();
-      });
-
-      // 안정화 대기 (최소화하여 타임아웃 방지)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // ✅ 1️⃣ 추가 안정화 대기
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       let screenshot: Buffer;
+      let selectorFound = false;
 
       if (selector) {
-        await page.waitForSelector(selector, { 
-          timeout: 10000,
-          visible: true,
-        });
+        // ✅ 1️⃣ 안정화된 selector 대기 로직
+        console.log(`Selector [${selector}] 대기 시작...`);
+        selectorFound = await waitForSelectorStable(page, selector, 45000);
         
-        const element = await page.$(selector);
-        if (!element) {
-          throw new Error(`요소를 찾을 수 없습니다: ${selector}`);
-        }
-
-        // 스크린샷 전에 타이틀 추가
-        await page.evaluate((sel: string) => {
-          const targetElement = document.querySelector(sel);
-          if (targetElement) {
-            const existingTitle = targetElement.querySelector('.screenshot-title');
-            if (existingTitle) {
-              existingTitle.remove();
-            }
+        if (!selectorFound) {
+          // ✅ 2️⃣ selector 미존재 시 디버깅 로그
+          console.error(`Selector [${selector}]를 찾을 수 없습니다.`);
+          await logPageDebugInfo(page, selector);
+          
+          // ✅ 3️⃣ Fallback: fullPage screenshot으로 대체
+          console.warn('Selector를 찾을 수 없어 fullPage screenshot으로 fallback합니다.');
+          screenshot = (await page.screenshot({
+            type: 'png',
+            fullPage: true,
+          })) as Buffer;
+        } else {
+          // ✅ selector를 찾은 경우 정상 처리
+          console.log(`Selector [${selector}] 발견됨.`);
+          
+          const element = await page.$(selector);
+          if (!element) {
+            // 예외 상황: polling에서는 찾았는데 실제로는 없음
+            console.warn('Selector polling에서는 찾았지만 실제 element가 없습니다. fallback합니다.');
+            screenshot = (await page.screenshot({
+              type: 'png',
+              fullPage: true,
+            })) as Buffer;
+          } else {
+            // 스크린샷 전에 타이틀 추가
+            await page.evaluate((sel: string) => {
+              const targetElement = document.querySelector(sel);
+              if (targetElement) {
+                const existingTitle = targetElement.querySelector('.screenshot-title');
+                if (existingTitle) {
+                  existingTitle.remove();
+                }
+                
+                const titleDiv = document.createElement('div');
+                titleDiv.className = 'screenshot-title mb-5 flex min-h-[64px] items-center gap-5';
+                titleDiv.innerHTML = `
+                  <div class="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
+                    우리학교 실천 현황 확인
+                  </div>
+                `;
+                targetElement.insertBefore(titleDiv, targetElement.firstChild);
+              }
+            }, selector);
             
-            const titleDiv = document.createElement('div');
-            titleDiv.className = 'screenshot-title mb-5 flex min-h-[64px] items-center gap-5';
-            titleDiv.innerHTML = `
-              <div class="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
-                우리학교 실천 현황 확인
-              </div>
-            `;
-            targetElement.insertBefore(titleDiv, targetElement.firstChild);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            const boundingBox = await element.boundingBox();
+            if (!boundingBox) {
+              console.warn('요소의 크기를 측정할 수 없습니다. fallback합니다.');
+              screenshot = (await page.screenshot({
+                type: 'png',
+                fullPage: true,
+              })) as Buffer;
+            } else {
+              screenshot = (await element.screenshot({
+                type: 'png',
+              })) as Buffer;
+            }
           }
-        }, selector);
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        const boundingBox = await element.boundingBox();
-        if (!boundingBox) {
-          throw new Error(`요소의 크기를 측정할 수 없습니다: ${selector}`);
         }
-        
-        screenshot = (await element.screenshot({
-          type: 'png',
-        })) as Buffer;
       } else {
+        // selector가 없는 경우 전체 페이지 캡처
         screenshot = (await page.screenshot({
           type: 'png',
           fullPage: false,
@@ -261,8 +374,6 @@ export async function POST(request: NextRequest) {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0',
-          // Content-Disposition은 프론트에서 파일명을 지정하므로 제거 가능
-          // 프론트에서 다운로드 시 파일명을 지정하므로 여기서는 선택적
         },
       });
     } catch (error) {
