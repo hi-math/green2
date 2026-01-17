@@ -56,3 +56,13 @@ body {
 }
 
 /* (transform 기반으로 통일했으므로 zoom fallback 불필요) */
+
+/* Spinner animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

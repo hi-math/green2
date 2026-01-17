@@ -1,8 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { PageHeader } from "../../../components/PageHeader";
 import { Step3Overview } from "../../../components/Step3Overview";
-import { generatePDF } from "../../../utils/generatePDF";
+import DownloadScreenshotButton from "../../../components/DownloadScreenshotButton";
 
 function DownloadIcon() {
   return (
@@ -20,7 +21,6 @@ function DownloadIcon() {
 }
 
 const STEP1_STORAGE_KEY = "carbonapp.step1";
-const STEP2_STORAGE_KEY = "carbonapp.step2";
 
 function loadStep1FromSession() {
   if (typeof window === "undefined") return null;
@@ -33,124 +33,163 @@ function loadStep1FromSession() {
   }
 }
 
-function loadStep2FromSession() {
-  if (typeof window === "undefined") return {};
+async function captureScreenshot(): Promise<Blob> {
+  // 현재 페이지 URL 가져오기
+  const currentUrl = window.location.href;
+  
+  // 세션 스토리지에서 데이터 읽기
+  const sessionData: Record<string, string> = {};
   try {
-    const raw = sessionStorage.getItem(STEP2_STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
+    const step1Data = sessionStorage.getItem(STEP1_STORAGE_KEY);
+    if (step1Data) {
+      sessionData['carbonapp.step1'] = step1Data;
+    }
+    
+    const step2Data = sessionStorage.getItem('carbonapp.step2');
+    if (step2Data) {
+      sessionData['carbonapp.step2'] = step2Data;
+    }
+  } catch (error) {
+    console.error('세션 스토리지 읽기 실패:', error);
   }
-}
-
-function toNumLoose(value: unknown): number | null {
-  const s = String(value ?? "").trim();
-  if (!s) return null;
-  const cleaned = s.replace(/[\s,]/g, "");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-
-const STEP2_ALL_ITEMS = [
-  { id: "daily-01", category: "실천 행동의 일상화" },
-  { id: "daily-02", category: "실천 행동의 일상화" },
-  { id: "daily-03", category: "실천 행동의 일상화" },
-  { id: "daily-04", category: "실천 행동의 일상화" },
-  { id: "daily-05", category: "실천 행동의 일상화" },
-  { id: "daily-06", category: "실천 행동의 일상화" },
-  { id: "daily-07", category: "실천 행동의 일상화" },
-  { id: "daily-08", category: "실천 행동의 일상화" },
-  { id: "daily-09", category: "실천 행동의 일상화" },
-  { id: "culture-01", category: "실천 문화 확산" },
-  { id: "culture-02", category: "실천 문화 확산" },
-  { id: "culture-03", category: "실천 문화 확산" },
-  { id: "culture-04", category: "실천 문화 확산" },
-  { id: "culture-05", category: "실천 문화 확산" },
-  { id: "culture-06", category: "실천 문화 확산" },
-  { id: "culture-07", category: "실천 문화 확산" },
-  { id: "culture-08", category: "실천 문화 확산" },
-  { id: "culture-09", category: "실천 문화 확산" },
-  { id: "culture-10", category: "실천 문화 확산" },
-  { id: "culture-11", category: "실천 문화 확산" },
-  { id: "culture-12", category: "실천 문화 확산" },
-  { id: "env-01", category: "학교 환경 조성" },
-  { id: "env-02", category: "학교 환경 조성" },
-  { id: "env-03", category: "학교 환경 조성" },
-  { id: "env-04", category: "학교 환경 조성" },
-  { id: "env-05", category: "학교 환경 조성" },
-  { id: "env-06", category: "학교 환경 조성" },
-  { id: "env-07", category: "학교 환경 조성" },
-  { id: "env-08", category: "학교 환경 조성" },
-];
-
-function handleDownloadPDF() {
-  const step1Data = loadStep1FromSession();
-  const step2Data = loadStep2FromSession();
-
-  if (!step1Data) {
-    alert("학교 정보가 없습니다. 먼저 1단계에서 정보를 입력해주세요.");
-    return;
-  }
-
-  const basic = step1Data.basic || {};
-  const emissions = step1Data.emissions || {};
-
-  // 탄소배출량 계산
-  const electric = toNumLoose(emissions.electricWon) ?? 0;
-  const gas = toNumLoose(emissions.gasWon) ?? 0;
-  const water = toNumLoose(emissions.waterWon) ?? 0;
-
-  const electricKg = electric * 0.4781;
-  const gasKg = gas * 2.176;
-  const waterKg = water * 0.237;
-  const totalCarbon = electricKg + gasKg + waterKg;
-
-  // Step2 통계 계산
-  const dailyItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 행동의 일상화");
-  const cultureItems = STEP2_ALL_ITEMS.filter((item) => item.category === "실천 문화 확산");
-  const envItems = STEP2_ALL_ITEMS.filter((item) => item.category === "학교 환경 조성");
-
-  const dailySelected = dailyItems.filter((item) => step2Data[item.id]).length;
-  const cultureSelected = cultureItems.filter((item) => step2Data[item.id]).length;
-  const envSelected = envItems.filter((item) => step2Data[item.id]).length;
-
-  generatePDF({
-    schoolName: basic.schoolName || "",
-    studentCount: basic.studentCount || "",
-    staffCount: basic.staffCount || "",
-    schoolAreaM2: basic.schoolAreaM2 || "",
-    totalCarbon: Math.round(totalCarbon),
-    electricKg,
-    gasKg,
-    waterKg,
-    dailySelected,
-    dailyTotal: dailyItems.length,
-    cultureSelected,
-    cultureTotal: cultureItems.length,
-    envSelected,
-    envTotal: envItems.length,
+  
+  // API 호출
+  const response = await fetch('/api/capture', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      url: currentUrl,
+      selector: '[data-pdf-content]', // 헤더를 제외한 contentRef 영역만 캡처
+      width: 1900,
+      height: 1200,
+      sessionData: sessionData, // 세션 스토리지 데이터 전달
+    }),
   });
+
+  if (!response.ok) {
+    // 응답이 JSON인지 확인
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const error = await response.json();
+      throw new Error(error.error || error.details || '스크린샷 생성 실패');
+    } else {
+      // HTML 에러 페이지인 경우
+      const text = await response.text();
+      console.error('API 응답 (HTML):', text.substring(0, 200));
+      throw new Error(`API 호출 실패 (${response.status}): ${response.statusText}`);
+    }
+  }
+
+  // PNG 이미지 Blob 반환
+  const blob = await response.blob();
+  
+  // Blob이 실제로 이미지인지 확인
+  if (!blob.type.startsWith('image/')) {
+    const text = await blob.text();
+    console.error('예상치 못한 응답:', text.substring(0, 200));
+    throw new Error('이미지가 아닌 응답을 받았습니다.');
+  }
+  
+  return blob;
+}
+
+async function handleDownloadJPG() {
+  const button = document.activeElement as HTMLButtonElement;
+  const originalDisabled = button?.disabled;
+  const originalText = button?.textContent;
+
+  try {
+    // 버튼 비활성화
+    if (button) {
+      button.disabled = true;
+      if (button.textContent) {
+        button.textContent = "이미지 생성 중...";
+      }
+    }
+
+    const blob = await captureScreenshot();
+    
+    // Blob을 URL로 변환하여 다운로드
+    const url = URL.createObjectURL(blob);
+    
+    // 파일 다운로드
+    const step1Data = loadStep1FromSession();
+    const basic = step1Data?.basic || {};
+    const safeSchoolName = (basic.schoolName || "학교").replace(/[<>:"/\\|?*]/g, "_");
+    const fileName = `탄소중립_실천현황_${safeSchoolName}_${new Date().toISOString().split("T")[0]}.png`;
+    
+    const link = document.createElement("a");
+    link.download = fileName;
+    link.href = url;
+    link.click();
+    
+    // URL 정리
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+
+    // 버튼 복원
+    if (button) {
+      button.disabled = originalDisabled || false;
+      if (originalText) {
+        button.textContent = originalText;
+      }
+    }
+  } catch (error) {
+    console.error("이미지 생성 실패:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    alert(`이미지 생성 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}\n\n브라우저 콘솔을 확인해주세요.`);
+    
+    // 버튼 복원
+    if (button) {
+      button.disabled = originalDisabled || false;
+      if (originalText) {
+        button.textContent = originalText;
+      }
+    }
+  }
 }
 
 export default function Page3() {
+  const contentRef = useRef<HTMLDivElement>(null);
+
+
   return (
     <div className="pt-6">
       <PageHeader
         title="우리학교 실천 현황 확인"
         showIntro={false}
         actions={
-          <button
-            type="button"
-            onClick={handleDownloadPDF}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-[color:rgba(185,213,50,0.35)] px-4 text-sm font-extrabold text-[var(--brand-b)] shadow-sm hover:brightness-105"
-          >
-            탄소중립 실천현황 다운로드
-            <DownloadIcon />
-          </button>
+          <div className="flex items-center gap-2">
+            <DownloadScreenshotButton
+              url={typeof window !== 'undefined' ? window.location.href : ''}
+              selector="[data-pdf-content]"
+              width={1900}
+              height={1200}
+            >
+              <span className="flex items-center gap-2">
+                탄소중립 실천현황 다운로드 (JPG)
+                <DownloadIcon />
+              </span>
+            </DownloadScreenshotButton>
+            <DownloadScreenshotButton
+              url={typeof window !== 'undefined' ? window.location.href : ''}
+              selector="[data-pdf-content]"
+              width={1900}
+              height={1200}
+              format="pdf"
+            >
+              <span className="flex items-center gap-2">
+                탄소중립 실천현황 다운로드 (PDF)
+                <DownloadIcon />
+              </span>
+            </DownloadScreenshotButton>
+          </div>
         }
       />
-      <Step3Overview />
+      <div ref={contentRef} data-pdf-content>
+        <Step3Overview />
+      </div>
     </div>
   );
 }
