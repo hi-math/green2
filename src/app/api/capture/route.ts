@@ -113,11 +113,27 @@ export async function POST(request: NextRequest) {
     } else {
       // ✅ 2️⃣ Vercel 프로덕션 환경: @sparticuz/chromium 필수 옵션
       if (!chromium) {
+        console.error('Chromium이 초기화되지 않았습니다.');
         throw new Error('Chromium이 초기화되지 않았습니다.');
       }
       
+      // ✅ 2️⃣ chromium.executablePath() 검증 및 디버그 로그
+      const executablePath = await chromium.executablePath();
+      console.log('Chromium executablePath:', executablePath ? 'Found' : 'NOT FOUND');
+      
+      if (!executablePath) {
+        console.error('Chromium executablePath가 비어있습니다.');
+        console.error('환경 정보:', {
+          NODE_ENV: process.env.NODE_ENV,
+          VERCEL: process.env.VERCEL,
+          hasChromium: !!chromium,
+          chromiumArgs: chromium.args?.length || 0,
+        });
+        throw new Error('Chromium 실행 파일을 찾을 수 없습니다. Vercel 환경을 확인해주세요.');
+      }
+      
       browserConfig.args = chromium.args;
-      browserConfig.executablePath = await chromium.executablePath();
+      browserConfig.executablePath = executablePath;
       browserConfig.headless = chromium.headless;
       
       // Vercel 환경 최적화 옵션
@@ -129,6 +145,12 @@ export async function POST(request: NextRequest) {
         '--single-process', // 서버리스 환경에서 중요
         '--disable-gpu'
       );
+      
+      console.log('Browser config:', {
+        executablePath: executablePath.substring(0, 50) + '...',
+        argsCount: browserConfig.args.length,
+        headless: browserConfig.headless,
+      });
     }
 
     // ✅ 2️⃣ 브라우저 실행 (타임아웃 설정)
@@ -141,16 +163,14 @@ export async function POST(request: NextRequest) {
       page.setDefaultTimeout(25000); // maxDuration보다 약간 작게
       page.setDefaultNavigationTimeout(25000);
 
-      // ✅ 4️⃣ 세션 데이터 주입
+      // ✅ 4️⃣ 세션 데이터 주입: page.evaluateOnNewDocument 사용 (navigation 전에 실행)
       if (sessionData && Object.keys(sessionData).length > 0) {
-        await page.goto(url, {
-          waitUntil: 'domcontentloaded',
-          timeout: 25000,
-        });
-
         // 타입 명시: sessionData를 Record<string, string>으로 명확히 지정
         const typedSessionData: Record<string, string> = sessionData as Record<string, string>;
-        await page.evaluate((data: Record<string, string>) => {
+        
+        // ✅ 4️⃣ evaluateOnNewDocument로 navigation 전에 sessionStorage 주입
+        await page.evaluateOnNewDocument((data: Record<string, string>) => {
+          // 모든 페이지 로드 전에 sessionStorage에 데이터 주입
           Object.keys(data).forEach((key: string) => {
             const value = data[key];
             // sessionStorage.setItem은 string만 받으므로 안전하게 변환
@@ -158,17 +178,13 @@ export async function POST(request: NextRequest) {
             sessionStorage.setItem(key, stringValue);
           });
         }, typedSessionData);
-
-        await page.reload({
-          waitUntil: 'networkidle2',
-          timeout: 25000,
-        });
-      } else {
-        await page.goto(url, {
-          waitUntil: 'networkidle2',
-          timeout: 25000,
-        });
       }
+
+      // ✅ 4️⃣ 페이지 로드 (sessionStorage는 이미 주입됨)
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: 25000,
+      });
 
       // ✅ 6️⃣ 폰트 및 리소스 로딩 보장
       await page.evaluate(() => {
@@ -268,6 +284,7 @@ export async function POST(request: NextRequest) {
       stack: errorStack,
       isDev,
       hasChromium: !!chromium,
+      hasPuppeteer: !!puppeteer,
     });
     
     // ✅ 7️⃣ 사용자 친화적 에러 메시지
@@ -276,6 +293,8 @@ export async function POST(request: NextRequest) {
       userMessage = '요청 시간이 초과되었습니다. 다시 시도해주세요.';
     } else if (errorMessage.includes('Chromium') || errorMessage.includes('executable')) {
       userMessage = '브라우저를 초기화할 수 없습니다. 잠시 후 다시 시도해주세요.';
+    } else if (errorMessage.includes('Execution context was destroyed')) {
+      userMessage = '페이지 로딩 중 오류가 발생했습니다. 다시 시도해주세요.';
     }
     
     return NextResponse.json(
