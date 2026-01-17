@@ -24,7 +24,10 @@ async function getPuppeteer() {
     try {
       chromium = require('@sparticuz/chromium');
       if (chromium) {
-        chromium.setGraphicsMode(false);
+        // ✅ @sparticuz/chromium 설정: 함수 호출이 아닌 boolean 대입 형태
+        // setGraphicsMode=true로 설정하면 안정성이 더 좋을 수 있음
+        chromium.setGraphicsMode = true; // 안정성 우선 (false일 때 페이지가 멈출 수 있음)
+        chromium.setHeadlessMode = true;
       }
     } catch (error) {
       console.error('@sparticuz/chromium 로드 실패:', error);
