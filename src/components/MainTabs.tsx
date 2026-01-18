@@ -534,7 +534,7 @@ function EmissionsForm({
               "inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-extrabold shadow-sm",
               hasAnyInvalid
                 ? "cursor-not-allowed bg-slate-200 text-slate-500 shadow-none"
-                : "bg-[var(--brand-b)] text-white hover:brightness-110",
+                : "cursor-pointer bg-[var(--brand-b)] text-white hover:brightness-110",
             ].join(" ")}
             onClick={validateAndNext}
           >
@@ -590,7 +590,7 @@ function Modal({
         <div className="mt-5 flex justify-center">
           <button
             type="button"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110 cursor-pointer"
             onClick={onClose}
           >
             닫기

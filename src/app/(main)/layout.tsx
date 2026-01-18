@@ -58,7 +58,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[240px_1fr] items-center gap-4 px-4 py-2">
           <button
             type="button"
-            className="flex h-16 w-full items-center"
+            className="flex h-16 w-full items-center cursor-pointer"
             onClick={() => router.push("/1")}
             aria-label="홈으로 이동"
           >

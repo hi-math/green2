@@ -255,7 +255,7 @@ export function Step2Cards() {
         <div className="mt-4 flex justify-end">
           <button
             type="button"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110 cursor-pointer"
             onClick={() => router.push("/3")}
           >
             다음으로

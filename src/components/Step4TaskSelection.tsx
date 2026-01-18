@@ -328,7 +328,7 @@ export function Step4TaskSelection() {
                       <button
                         type="button"
                         onClick={(e) => handleRemoveFromRight(item.id, e)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 hidden h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-600 opacity-0 transition-all hover:bg-slate-300 hover:text-slate-700 group-hover:flex group-hover:opacity-100"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 hidden h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-600 opacity-0 transition-all hover:bg-slate-300 hover:text-slate-700 group-hover:flex group-hover:opacity-100 cursor-pointer"
                         aria-label="제거"
                       >
                         <svg

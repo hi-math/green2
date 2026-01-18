@@ -457,7 +457,7 @@ export default function DownloadScreenshotButton({
           relative inline-flex h-10 w-[280px] items-center justify-center gap-2 
           rounded-lg border border-slate-200 px-4 text-sm font-extrabold 
           text-[var(--brand-b)] shadow-sm overflow-hidden transition-all 
-          duration-300 disabled:cursor-not-allowed 
+          duration-300 cursor-pointer disabled:cursor-not-allowed 
           hover:brightness-105 hover:shadow-md active:scale-[0.98]
           ${className}
         `}

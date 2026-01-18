@@ -45,14 +45,14 @@ export function ConfirmModal({
         <div className="flex justify-center gap-3">
           <button
             type="button"
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
             onClick={onCancel}
           >
             취소
           </button>
           <button
             type="button"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110 cursor-pointer"
             onClick={onConfirm}
           >
             {confirmText}
