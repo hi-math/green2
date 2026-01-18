@@ -779,6 +779,7 @@ function ActionProgressCard({
 
 export function Step3Overview() {
   const router = useRouter();
+  const [isScreenshotMode, setIsScreenshotMode] = useState(false);
   const [schoolName, setSchoolName] = useState<string>("");
   const [basicNums, setBasicNums] = useState<{
     students: string;
@@ -796,6 +797,11 @@ export function Step3Overview() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    
+    // 스크린샷 모드 확인
+    const params = new URLSearchParams(window.location.search);
+    setIsScreenshotMode(params.get('screenshot') === '1');
+    
     try {
       const snap = loadStep1FromSession();
       const e = snap?.emissions ?? {};
@@ -971,16 +977,18 @@ export function Step3Overview() {
       {/* Bottom cards - 데이터 로드 완료 후에만 렌더링 */}
       {isDataLoaded && <BottomCards step2Selections={step2Selections} />}
 
-      {/* 다음으로 버튼 */}
-      <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
-          onClick={() => router.push("/4")}
-        >
-          다음으로
-        </button>
-      </div>
+      {/* 다음으로 버튼 - 스크린샷 모드에서는 숨김 */}
+      {!isScreenshotMode && (
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
+            onClick={() => router.push("/4")}
+          >
+            다음으로
+          </button>
+        </div>
+      )}
     </div>
   );
 }

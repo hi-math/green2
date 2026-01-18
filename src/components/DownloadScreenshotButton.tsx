@@ -107,19 +107,27 @@ export default function DownloadScreenshotButton({
         // 0~60%: 50~120ms 간격으로 0.8~2% 랜덤 증가 (더 느리게)
         if (elapsed >= interval) {
           const increment = Math.random() * 1.2 + 0.8; // 0.8~2%
-          currentProgress = Math.min(currentProgress + increment, 60);
-          interval = Math.random() * 70 + 50; // 50~120ms (더 느린 간격)
-          lastUpdateTime = now;
-          setProgress(currentProgress);
+          const newProgress = Math.min(currentProgress + increment, 60);
+          // 진행률이 뒤로 가지 않도록 보장
+          if (newProgress > currentProgress) {
+            currentProgress = newProgress;
+            interval = Math.random() * 70 + 50; // 50~120ms (더 느린 간격)
+            lastUpdateTime = now;
+            setProgress(currentProgress);
+          }
         }
       } else if (currentProgress < 85) {
         // 60~85%: 점점 느려지게 (증가폭/빈도 감소) - 더 느리게
         if (elapsed >= interval) {
           const increment = Math.random() * 1.0 + 0.3; // 0.3~1.3% (더 작은 증가폭)
-          currentProgress = Math.min(currentProgress + increment, 85);
-          interval = Math.min(interval * 1.15, 300); // 최대 300ms까지 증가 (더 느리게)
-          lastUpdateTime = now;
-          setProgress(currentProgress);
+          const newProgress = Math.min(currentProgress + increment, 85);
+          // 진행률이 뒤로 가지 않도록 보장
+          if (newProgress > currentProgress) {
+            currentProgress = newProgress;
+            interval = Math.min(interval * 1.15, 300); // 최대 300ms까지 증가 (더 느리게)
+            lastUpdateTime = now;
+            setProgress(currentProgress);
+          }
         }
       }
       // 85% 이상은 fetch 완료 전까지 절대 못 가게
