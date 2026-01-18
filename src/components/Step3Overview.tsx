@@ -71,7 +71,12 @@ function Ring({ pct }: { pct: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="text-sm font-extrabold text-[var(--brand-b)]">{clamped}%</div>
+        <div 
+          className="text-sm font-extrabold text-[var(--brand-b)]"
+          style={{ fontFamily: 'var(--font-brand), "Jalnan", sans-serif' }}
+        >
+          {clamped}%
+        </div>
       </div>
     </div>
   );
@@ -283,7 +288,11 @@ function SemiShareGauge({
           <div className="flex-1 flex flex-col items-center justify-center">
             <div
               className="font-black text-[var(--brand-b)] text-center"
-              style={{ fontSize: `${totalFontPx}px`, lineHeight: 1 }}
+              style={{ 
+                fontSize: `${totalFontPx}px`, 
+                lineHeight: 1,
+                fontFamily: 'var(--font-brand), "Jalnan", sans-serif'
+              }}
             >
               <CountUpNumber value={totalValue} duration={1500} />
             </div>
@@ -390,7 +399,10 @@ function SemiShareGauge({
                 
                 {/* 오른쪽: 수치 영역 (70%) - 줄바꿈하고 가운데 정렬 */}
                 <div className="flex flex-col items-center justify-center" style={{ width: "60%" }}>
-                  <div className="text-sm font-black text-[var(--brand-b)] text-center">
+                  <div 
+                    className="text-sm font-black text-[var(--brand-b)] text-center"
+                    style={{ fontFamily: 'var(--font-brand), "Jalnan", sans-serif' }}
+                  >
                     {Math.round(seg.value).toLocaleString("ko-KR")}
                   </div>
                   <div className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.6)] text-center">
@@ -418,6 +430,7 @@ type Step1Snapshot = {
     electricWon?: string;
     gasWon?: string;
     waterWon?: string;
+    solarAnnualKwh?: string;
   };
 };
 
@@ -721,7 +734,10 @@ function ActionProgressCard({
             })}
           </div>
           {/* 바 아래에 카운트 표시 (크기 줄임) */}
-          <div className="mt-1.5 text-xs font-extrabold text-[var(--brand-b)]">
+          <div 
+            className="mt-1.5 text-xs font-extrabold text-[var(--brand-b)]"
+            style={{ fontFamily: 'var(--font-brand), "Jalnan", sans-serif' }}
+          >
             {safeSelectedCount}/{safeTotalCount}
           </div>
         </div>
@@ -773,6 +789,7 @@ export function Step3Overview() {
     electric?: string;
     gas?: string;
     water?: string;
+    solar?: string;
   } | null>(null);
   const [step2Selections, setStep2Selections] = useState<Record<string, boolean>>({});
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -792,6 +809,7 @@ export function Step3Overview() {
         electric: e.electricWon ?? "",
         gas: e.gasWon ?? "",
         water: e.waterWon ?? "",
+        solar: e.solarAnnualKwh ?? "",
       });
       const step2Data = loadStep2FromSession();
       setStep2Selections(step2Data);
@@ -809,10 +827,12 @@ export function Step3Overview() {
     const electricStr = emissions?.electric ?? "";
     const gasStr = emissions?.gas ?? "";
     const waterStr = emissions?.water ?? "";
+    const solarStr = emissions?.solar ?? "";
 
     const electricN = toNumLoose(electricStr);
     const gasN = toNumLoose(gasStr);
     const waterN = toNumLoose(waterStr);
+    const solarN = toNumLoose(solarStr);
 
     const hasAnyInput =
       electricStr.trim().length > 0 || gasStr.trim().length > 0 || waterStr.trim().length > 0;
@@ -820,12 +840,15 @@ export function Step3Overview() {
     const electric = electricN ?? 0;
     const gas = gasN ?? 0;
     const water = waterN ?? 0;
+    const solar = solarN ?? 0;
 
     if (!hasAnyInput || (electric === 0 && gas === 0 && water === 0)) {
       return { kind: "empty" as const, totalKg: 0 };
     }
 
-    const kg = electric * 0.4781 + gas * 2.176 + water * 0.237;
+    // 전기 사용량에서 신재생 에너지 사용량을 제외한 값으로 계산
+    const netElectric = Math.max(0, electric - solar);
+    const kg = netElectric * 0.4781 + gas * 2.176 + water * 0.237;
     const students = toNumLoose(basicNums?.students ?? "") ?? 0;
     const staff = toNumLoose(basicNums?.staff ?? "") ?? 0;
     const areaM2 = toNumLoose(basicNums?.areaM2 ?? "") ?? 0;
@@ -854,9 +877,12 @@ export function Step3Overview() {
     const electric = toNumLoose(emissions?.electric ?? "") ?? 0;
     const gas = toNumLoose(emissions?.gas ?? "") ?? 0;
     const water = toNumLoose(emissions?.water ?? "") ?? 0;
+    const solar = toNumLoose(emissions?.solar ?? "") ?? 0;
 
+    // 전기 사용량에서 신재생 에너지 사용량을 제외한 값으로 계산
+    const netElectric = Math.max(0, electric - solar);
     // emissions factors
-    const electricKg = electric * 0.4781;
+    const electricKg = netElectric * 0.4781;
     const gasKg = gas * 2.176;
     const waterKg = water * 0.237;
 
@@ -931,9 +957,9 @@ export function Step3Overview() {
           <div className="text-sm font-semibold text-[color:rgba(75,70,41,0.85)] leading-relaxed text-left">
             {carbonStats.kind === "value" ? (
               <>
-                우리학교의 탄소 배출량은 축구장 <span className="text-2xl font-black mx-1" style={{ color: "#C97D60" }}>{fmt0.format(Math.round(footballFieldCount))}</span>개 면적의 소나무 숲이 1년 동안 흡수 하는 탄소 양과 같습니다.
+                우리학교의 탄소 배출량은 축구장 <span className="text-2xl font-black mx-1" style={{ color: "#C97D60", fontFamily: 'var(--font-brand), "Jalnan", sans-serif' }}>{fmt0.format(Math.round(footballFieldCount))}</span>개 면적의 소나무 숲이 1년 동안 흡수 하는 탄소 양과 같습니다.
                 <br />
-                만약 우리학교 에어컨 설정 온도를 1℃ 높인다면, 연간 소나무 <span className="text-2xl font-black mx-1" style={{ color: "#C97D60" }}>{fmt0.format(treeCount)}</span>그루를 심는 것과 같은 효과를 낼 수 있습니다.
+                만약 우리학교 에어컨 설정 온도를 1℃ 높인다면, 연간 소나무 <span className="text-2xl font-black mx-1" style={{ color: "#C97D60", fontFamily: 'var(--font-brand), "Jalnan", sans-serif' }}>{fmt0.format(treeCount)}</span>그루를 심는 것과 같은 효과를 낼 수 있습니다.
               </>
             ) : (
               "탄소배출량이 입력되지 않았습니다."
@@ -949,7 +975,7 @@ export function Step3Overview() {
       <div className="mt-6 flex justify-end">
         <button
           type="button"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110 cursor-pointer"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
           onClick={() => router.push("/4")}
         >
           다음으로

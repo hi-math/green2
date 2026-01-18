@@ -534,6 +534,7 @@ export async function POST(request: NextRequest) {
       
       // ✅ 스크린샷용 폰트 설정: Noto Sans KR 우선 사용 (화면과 일치)
       // #capture-root 전체에 Noto Sans KR을 !important로 고정
+      // 숫자는 Jalnan 폰트 사용
       await page.addStyleTag({
         content: `
           #capture-root, #capture-root * {
@@ -542,7 +543,49 @@ export async function POST(request: NextRequest) {
           html, body, * {
             font-family: "Noto Sans KR", "Nanum Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif !important;
           }
+          /* 숫자 부분은 Jalnan 폰트 사용 */
+          #capture-root [style*="fontFamily"][style*="Jalnan"],
+          #capture-root [style*="font-family"][style*="Jalnan"],
+          #capture-root [style*="fontFamily"][style*="var(--font-brand)"],
+          #capture-root [style*="font-family"][style*="var(--font-brand)"] {
+            font-family: "Jalnan", var(--font-brand), "Noto Sans KR", sans-serif !important;
+          }
         `,
+      });
+      
+      // 숫자가 포함된 요소에 Jalnan 폰트 강제 적용
+      await page.evaluate(() => {
+        // 숫자만 포함하는 텍스트 노드 찾기 및 부모 요소에 Jalnan 폰트 적용
+        const walker = document.createTreeWalker(
+          document.getElementById('capture-root') || document.body,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+        
+        let node;
+        while (node = walker.nextNode()) {
+          const text = node.textContent || '';
+          // 숫자만 포함하거나 숫자가 주요 내용인 경우
+          if (/^\d+[\d,.\s%\/]*$/.test(text.trim()) || /^\d+/.test(text.trim())) {
+            const parent = node.parentElement;
+            if (parent && !parent.closest('[style*="Jalnan"]')) {
+              const currentStyle = parent.getAttribute('style') || '';
+              parent.setAttribute('style', `${currentStyle}; font-family: "Jalnan", var(--font-brand), "Noto Sans KR", sans-serif !important;`);
+            }
+          }
+        }
+        
+        // font-black, font-extrabold 클래스를 가진 요소들도 Jalnan 적용
+        const numberElements = document.querySelectorAll('#capture-root .font-black, #capture-root .font-extrabold');
+        numberElements.forEach((el) => {
+          const htmlEl = el as HTMLElement;
+          if (htmlEl) {
+            const currentStyle = htmlEl.getAttribute('style') || '';
+            if (!currentStyle.includes('Jalnan') && !currentStyle.includes('font-brand')) {
+              htmlEl.setAttribute('style', `${currentStyle}; font-family: "Jalnan", var(--font-brand), "Noto Sans KR", sans-serif !important;`);
+            }
+          }
+        });
       });
       
       // ✅ 폰트 로드 대기 (간소화: 최대 1초)

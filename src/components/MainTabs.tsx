@@ -510,7 +510,7 @@ function EmissionsForm({
           invalid={waterInvalid}
         />
         <FieldRow
-          label="태양열 발전량"
+          label="신재생 에너지 사용량"
           placeholder=""
           unit="kWh"
           maxWidthClass="max-w-[180px]"
@@ -534,7 +534,7 @@ function EmissionsForm({
               "inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-extrabold shadow-sm",
               hasAnyInvalid
                 ? "cursor-not-allowed bg-slate-200 text-slate-500 shadow-none"
-                : "cursor-pointer bg-[var(--brand-b)] text-white hover:brightness-110",
+                : "cursor-pointer bg-[var(--brand-b)] text-white hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200",
             ].join(" ")}
             onClick={validateAndNext}
           >
