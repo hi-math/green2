@@ -344,7 +344,7 @@ export async function POST(request: NextRequest) {
       try {
         await Promise.race([
           navigationPromise,
-          new Promise(resolve => setTimeout(resolve, 2000)), // 최대 2초 대기
+          new Promise(resolve => setTimeout(resolve, 1000)), // 최대 1초 대기
         ]);
         console.log('추가 네비게이션 흡수 완료 (또는 없음)');
       } catch (error) {
@@ -402,10 +402,8 @@ export async function POST(request: NextRequest) {
         // selector가 없어도 계속 진행 (하위 호환성)
       }
 
-      // ✅ 폰트 로딩 대기 (폰트 깨짐 방지)
-      const fontLoadTime = Date.now();
+      // ✅ 폰트 로딩 대기 (간소화: 최대 2초)
       try {
-        // document.fonts.ready 대기 (최대 10초)
         await Promise.race([
           page.evaluate(() => {
             if (document.fonts && document.fonts.ready) {
@@ -413,100 +411,12 @@ export async function POST(request: NextRequest) {
             }
             return Promise.resolve();
           }),
-          new Promise(resolve => setTimeout(resolve, 10000)), // 10초 타임아웃
+          new Promise(resolve => setTimeout(resolve, 2000)), // 2초 타임아웃
         ]);
-        
-        // 모든 폰트가 loaded 상태가 될 때까지 대기 (최대 5초)
-        let attempts = 0;
-        const maxAttempts = 10;
-        while (attempts < maxAttempts) {
-          const fontStatus = await page.evaluate(() => {
-            if (document.fonts) {
-              const fonts = Array.from(document.fonts);
-              const total = fonts.length;
-              const loaded = fonts.filter(f => f.status === 'loaded').length;
-              const loading = fonts.filter(f => f.status === 'loading').length;
-              const unloaded = fonts.filter(f => f.status === 'unloaded').length;
-              
-              return {
-                total,
-                loaded,
-                loading,
-                unloaded,
-                allLoaded: total > 0 && loading === 0 && unloaded === 0
-              };
-            }
-            return { total: 0, loaded: 0, loading: 0, unloaded: 0, allLoaded: true };
-          });
-          
-          console.log(`폰트 로딩 상태 (${attempts + 1}/${maxAttempts}): ${fontStatus.loaded}/${fontStatus.total} 로드됨, ${fontStatus.loading} 로딩중, ${fontStatus.unloaded} 미로드`);
-          
-          if (fontStatus.allLoaded || fontStatus.total === 0) {
-            console.log('모든 폰트가 로드되었습니다.');
-            break;
-          }
-          
-          // 500ms 대기 후 재시도
-          await new Promise(resolve => setTimeout(resolve, 500));
-          attempts++;
-        }
-        
-        console.log(`폰트 로딩 완료 (${Date.now() - fontLoadTime}ms)`);
+        console.log('폰트 로딩 대기 완료');
       } catch (error) {
         console.warn('폰트 로딩 대기 중 에러 (무시):', error);
       }
-
-      // ✅ 추가 폰트 안정화 대기 (폰트 렌더링 완료 보장)
-      // 로컬 폰트가 완전히 로드되고 렌더링될 때까지 대기
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // ✅ 폰트 렌더링 확인: 실제 텍스트가 폰트로 렌더링되었는지 확인
-      try {
-        const fontRendered = await page.evaluate(() => {
-          // 주요 텍스트 요소들 확인
-          const body = document.body;
-          if (!body) return false;
-          
-          // computedStyle에서 fontFamily 확인
-          const style = window.getComputedStyle(body);
-          const fontFamily = style.fontFamily || '';
-          
-          // 한글 폰트가 로드되었는지 확인 (Noto Sans KR, Nanum Gothic 등)
-          const hasKoreanFont = fontFamily.includes('Noto Sans KR') || 
-                               fontFamily.includes('Nanum Gothic') ||
-                               fontFamily.includes('NotoSansKR') ||
-                               fontFamily.includes('Noto Sans');
-          
-          // 한글 텍스트가 제대로 렌더링되는지 확인 (네모가 아닌지)
-          const testElement = document.createElement('div');
-          testElement.style.position = 'absolute';
-          testElement.style.visibility = 'hidden';
-          testElement.style.fontFamily = fontFamily;
-          testElement.textContent = '한글테스트';
-          document.body.appendChild(testElement);
-          
-          const testWidth = testElement.offsetWidth;
-          document.body.removeChild(testElement);
-          
-          // 네모(□)로 렌더링되면 너비가 매우 작음 (폰트가 없을 때)
-          const isRenderedCorrectly = testWidth > 20;
-          
-          return hasKoreanFont && isRenderedCorrectly;
-        });
-        
-        if (fontRendered) {
-          console.log('폰트 렌더링 확인: 한글 폰트가 정상적으로 적용됨');
-        } else {
-          console.warn('폰트 렌더링 확인: 한글 폰트가 적용되지 않았을 수 있음 (네모로 표시될 수 있음)');
-          // 추가 대기
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      } catch (error) {
-        console.warn('폰트 렌더링 확인 중 에러 (무시):', error);
-      }
-
-      // ✅ 4️⃣ 추가 안정화 대기 (React 컴포넌트 렌더링 대기)
-      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // ✅ 5️⃣ 캡처 모드에서 내부 스크롤 제거 및 전체 높이로 펼치기
       const scrollRemovalResult = await page.evaluate(() => {
@@ -635,34 +545,21 @@ export async function POST(request: NextRequest) {
         `,
       });
       
-      // ✅ 폰트 로드 대기 (document.fonts.ready 및 모든 폰트가 loaded 상태)
-      await page.evaluate(() => {
-        return new Promise<void>((resolve) => {
-          if (document.fonts && document.fonts.ready) {
-            document.fonts.ready.then(() => {
-              // 모든 폰트가 loaded 상태인지 확인
-              const checkAllLoaded = () => {
-                if (document.fonts) {
-                  const fonts = Array.from(document.fonts);
-                  const allLoaded = fonts.length === 0 || fonts.every(f => f.status === 'loaded');
-                  if (allLoaded) {
-                    // 추가 안정화 대기
-                    setTimeout(() => resolve(), 500);
-                  } else {
-                    // 아직 로딩 중인 폰트가 있으면 200ms 후 재확인
-                    setTimeout(checkAllLoaded, 200);
-                  }
-                } else {
-                  setTimeout(() => resolve(), 500);
-                }
-              };
-              checkAllLoaded();
-            });
-          } else {
-            setTimeout(() => resolve(), 1000);
-          }
-        });
-      });
+      // ✅ 폰트 로드 대기 (간소화: 최대 1초)
+      await Promise.race([
+        page.evaluate(() => {
+          return new Promise<void>((resolve) => {
+            if (document.fonts && document.fonts.ready) {
+              document.fonts.ready.then(() => {
+                setTimeout(() => resolve(), 200);
+              });
+            } else {
+              setTimeout(() => resolve(), 200);
+            }
+          });
+        }),
+        new Promise(resolve => setTimeout(resolve, 1000)), // 1초 타임아웃
+      ]);
       
       console.log('폰트 강제 설정 및 로드 완료');
       
@@ -785,7 +682,7 @@ export async function POST(request: NextRequest) {
                 if (el) el.scrollTop = 0;
               }, usedSelector);
               
-              await new Promise(resolve => setTimeout(resolve, 200));
+              await new Promise(resolve => setTimeout(resolve, 100));
               
               for (let i = 0; i < numScreenshots; i++) {
                 // 현재 위치에서 캡처
@@ -805,7 +702,7 @@ export async function POST(request: NextRequest) {
                     }
                   }, usedSelector, scrollStep);
                   
-                  await new Promise(resolve => setTimeout(resolve, 200));
+                  await new Promise(resolve => setTimeout(resolve, 100));
                 }
               }
               
@@ -893,7 +790,7 @@ export async function POST(request: NextRequest) {
                 console.log(`Viewport 조정: ${currentViewport.width}x${currentViewport.height} → ${requiredWidth}x${requiredHeight}`);
                 
                 // 레이아웃 재계산 대기
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 100));
                 
                 // 요소 다시 찾기 (viewport 변경 후)
                 const updatedElement = await page.$(usedSelector);
@@ -928,7 +825,7 @@ export async function POST(request: NextRequest) {
           // "Execution context was destroyed" 에러인 경우 재시도
           if (errorMessage.includes('Execution context was destroyed') && captureAttempts < maxAttempts) {
             console.log('Execution context 파괴 감지. 재시도 전 대기...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             // ready selector 다시 대기
             try {
