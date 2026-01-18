@@ -215,7 +215,11 @@ export async function POST(request: NextRequest) {
         const reqUrl = req.url();
         
         // ✅ 폰트는 무조건 허용 (폰트 깨짐 방지)
-        if (resourceType === 'font') {
+        // resourceType이 font이거나, 폰트 파일 확장자(.woff, .woff2, .ttf, .otf)를 가진 요청 허용
+        if (resourceType === 'font' || 
+            /\.(woff2?|ttf|otf|eot)(\?|$)/i.test(reqUrl) ||
+            /\/fonts\//i.test(reqUrl) ||
+            /\/_next\/static\/media\/.*\.(woff2?|ttf|otf)/i.test(reqUrl)) {
           req.continue();
           return;
         }
@@ -401,7 +405,7 @@ export async function POST(request: NextRequest) {
       // ✅ 폰트 로딩 대기 (폰트 깨짐 방지)
       const fontLoadTime = Date.now();
       try {
-        // document.fonts.ready 대기 (최대 8초)
+        // document.fonts.ready 대기 (최대 10초)
         await Promise.race([
           page.evaluate(() => {
             if (document.fonts && document.fonts.ready) {
@@ -409,42 +413,42 @@ export async function POST(request: NextRequest) {
             }
             return Promise.resolve();
           }),
-          new Promise(resolve => setTimeout(resolve, 8000)), // 8초 타임아웃
+          new Promise(resolve => setTimeout(resolve, 10000)), // 10초 타임아웃
         ]);
         
-        // 폰트 로딩 상태 확인 및 재시도
-        let fontStatus = await page.evaluate(() => {
-          if (document.fonts) {
-            const fonts = Array.from(document.fonts);
-            return {
-              total: fonts.length,
-              loaded: fonts.filter(f => f.status === 'loaded').length,
-              loading: fonts.filter(f => f.status === 'loading').length,
-              unloaded: fonts.filter(f => f.status === 'unloaded').length,
-            };
-          }
-          return { total: 0, loaded: 0, loading: 0, unloaded: 0 };
-        });
-        console.log(`폰트 로딩 상태 (1차): ${fontStatus.loaded}/${fontStatus.total} 로드됨, ${fontStatus.loading} 로딩중, ${fontStatus.unloaded} 미로드`);
-        
-        // 로딩 중인 폰트가 있으면 추가 대기
-        if (fontStatus.loading > 0) {
-          console.log('로딩 중인 폰트가 있습니다. 추가 대기...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          fontStatus = await page.evaluate(() => {
+        // 모든 폰트가 loaded 상태가 될 때까지 대기 (최대 5초)
+        let attempts = 0;
+        const maxAttempts = 10;
+        while (attempts < maxAttempts) {
+          const fontStatus = await page.evaluate(() => {
             if (document.fonts) {
               const fonts = Array.from(document.fonts);
+              const total = fonts.length;
+              const loaded = fonts.filter(f => f.status === 'loaded').length;
+              const loading = fonts.filter(f => f.status === 'loading').length;
+              const unloaded = fonts.filter(f => f.status === 'unloaded').length;
+              
               return {
-                total: fonts.length,
-                loaded: fonts.filter(f => f.status === 'loaded').length,
-                loading: fonts.filter(f => f.status === 'loading').length,
-                unloaded: fonts.filter(f => f.status === 'unloaded').length,
+                total,
+                loaded,
+                loading,
+                unloaded,
+                allLoaded: total > 0 && loading === 0 && unloaded === 0
               };
             }
-            return { total: 0, loaded: 0, loading: 0, unloaded: 0 };
+            return { total: 0, loaded: 0, loading: 0, unloaded: 0, allLoaded: true };
           });
-          console.log(`폰트 로딩 상태 (2차): ${fontStatus.loaded}/${fontStatus.total} 로드됨, ${fontStatus.loading} 로딩중, ${fontStatus.unloaded} 미로드`);
+          
+          console.log(`폰트 로딩 상태 (${attempts + 1}/${maxAttempts}): ${fontStatus.loaded}/${fontStatus.total} 로드됨, ${fontStatus.loading} 로딩중, ${fontStatus.unloaded} 미로드`);
+          
+          if (fontStatus.allLoaded || fontStatus.total === 0) {
+            console.log('모든 폰트가 로드되었습니다.');
+            break;
+          }
+          
+          // 500ms 대기 후 재시도
+          await new Promise(resolve => setTimeout(resolve, 500));
+          attempts++;
         }
         
         console.log(`폰트 로딩 완료 (${Date.now() - fontLoadTime}ms)`);
@@ -619,21 +623,40 @@ export async function POST(request: NextRequest) {
       // 대신 폰트가 로드되도록 대기
       
       // ✅ 스크린샷용 폰트 설정: Noto Sans KR 우선 사용 (화면과 일치)
+      // #capture-root 전체에 Noto Sans KR을 !important로 고정
       await page.addStyleTag({
         content: `
+          #capture-root, #capture-root * {
+            font-family: "Noto Sans KR", "Nanum Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif !important;
+          }
           html, body, * {
             font-family: "Noto Sans KR", "Nanum Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif !important;
           }
         `,
       });
       
-      // ✅ 폰트 로드 대기 (document.fonts.ready)
+      // ✅ 폰트 로드 대기 (document.fonts.ready 및 모든 폰트가 loaded 상태)
       await page.evaluate(() => {
         return new Promise<void>((resolve) => {
           if (document.fonts && document.fonts.ready) {
             document.fonts.ready.then(() => {
-              // 추가 안정화 대기
-              setTimeout(() => resolve(), 500);
+              // 모든 폰트가 loaded 상태인지 확인
+              const checkAllLoaded = () => {
+                if (document.fonts) {
+                  const fonts = Array.from(document.fonts);
+                  const allLoaded = fonts.length === 0 || fonts.every(f => f.status === 'loaded');
+                  if (allLoaded) {
+                    // 추가 안정화 대기
+                    setTimeout(() => resolve(), 500);
+                  } else {
+                    // 아직 로딩 중인 폰트가 있으면 200ms 후 재확인
+                    setTimeout(checkAllLoaded, 200);
+                  }
+                } else {
+                  setTimeout(() => resolve(), 500);
+                }
+              };
+              checkAllLoaded();
             });
           } else {
             setTimeout(() => resolve(), 1000);
