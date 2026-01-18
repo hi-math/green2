@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { PageHeader } from "../../../components/PageHeader";
 import { Step3Overview } from "../../../components/Step3Overview";
 import DownloadScreenshotButton from "../../../components/DownloadScreenshotButton";
@@ -153,12 +153,16 @@ async function handleDownloadJPG() {
 export default function Page3() {
   const contentRef = useRef<HTMLDivElement>(null);
   const captureRootRef = useRef<HTMLDivElement>(null);
+  const [isScreenshotMode, setIsScreenshotMode] = React.useState(false);
 
   useEffect(() => {
-    // screenshot=1 쿼리일 때 data-ready="1" 설정
+    // screenshot=1 쿼리일 때 data-ready="1" 설정 및 스크린샷 모드 활성화
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('screenshot') === '1' && captureRootRef.current) {
+      const isScreenshot = params.get('screenshot') === '1';
+      setIsScreenshotMode(isScreenshot);
+      
+      if (isScreenshot && captureRootRef.current) {
         // 약간의 지연 후 ready 설정 (컴포넌트 렌더링 완료 대기)
         const timer = setTimeout(() => {
           if (captureRootRef.current) {
@@ -178,18 +182,18 @@ export default function Page3() {
         actions={
           <div className="flex items-center gap-2">
             <DownloadScreenshotButton
-              url={typeof window !== 'undefined' ? window.location.href : ''}
+              url={typeof window !== 'undefined' ? `${window.location.origin}/3?screenshot=1` : ''}
               selector="#capture-root"
               width={1900}
               height={1200}
             >
               <span className="flex items-center gap-2">
-                탄소중립 실천현황 다운로드 (JPG)
+                탄소중립 실천현황 다운로드 (PNG)
                 <DownloadIcon />
               </span>
             </DownloadScreenshotButton>
             <DownloadScreenshotButton
-              url={typeof window !== 'undefined' ? window.location.href : ''}
+              url={typeof window !== 'undefined' ? `${window.location.origin}/3?screenshot=1` : ''}
               selector="#capture-root"
               width={1900}
               height={1200}
@@ -204,6 +208,15 @@ export default function Page3() {
         }
       />
       <div id="capture-root" ref={captureRootRef}>
+        {/* ✅ 캡처 영역: 타이틀 포함, 헤더 제외 */}
+        {/* 스크린샷 모드일 때만 타이틀 표시 (화면에는 보이지 않음) */}
+        {isScreenshotMode && (
+          <div className="mb-5 flex min-h-[64px] items-center gap-5">
+            <div className="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
+              우리학교 실천 현황 확인
+            </div>
+          </div>
+        )}
         <div ref={contentRef} data-pdf-content>
           <Step3Overview />
         </div>

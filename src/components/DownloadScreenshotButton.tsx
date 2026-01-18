@@ -37,12 +37,13 @@ export default function DownloadScreenshotButton({
   onError,
   disabled = false,
   format = 'png',
-  imageFormat = 'jpeg', // 기본 JPEG (빠르고 용량 작음)
+  imageFormat = 'png', // 기본 PNG (품질 우선)
 }: DownloadScreenshotButtonProps) {
   const [progress, setProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [canCancel, setCanCancel] = useState(false);
+  const [stage, setStage] = useState<'capture' | 'generate' | 'prepare' | null>(null); // 진행 단계
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -148,6 +149,7 @@ export default function DownloadScreenshotButton({
       setProgress(0);
       setIsLoading(false);
       setCanCancel(false);
+      setStage(null);
     }
     if (abortControllerRef.current) {
       abortControllerRef.current = null;
@@ -216,8 +218,9 @@ export default function DownloadScreenshotButton({
     const xOffset = (pdfWidth - finalWidth) / 2;
     const yOffset = (pdfHeight - finalHeight) / 2;
     
-    // 이미지를 PDF에 추가
-    pdf.addImage(img, 'PNG', xOffset, yOffset, finalWidth, finalHeight, undefined, 'NONE');
+    // 이미지를 PDF에 추가 (blob 타입에 따라 포맷 결정)
+    const imageFormat = blob.type.includes('jpeg') || blob.type.includes('jpg') ? 'JPEG' : 'PNG';
+    pdf.addImage(img, imageFormat, xOffset, yOffset, finalWidth, finalHeight, undefined, 'NONE');
 
     // URL 정리
     URL.revokeObjectURL(imgUrl);
@@ -236,6 +239,7 @@ export default function DownloadScreenshotButton({
     setProgress(0);
     setCanCancel(true);
     setToast(null);
+    setStage('capture'); // 1/3: 화면 캡쳐중
 
     // AbortController 생성
     abortControllerRef.current = new AbortController();
@@ -251,7 +255,7 @@ export default function DownloadScreenshotButton({
         selector,
         width, // 레이아웃 기준 (서버에서 viewport 800px로 처리)
         height, // 레이아웃 기준
-        format: imageFormat, // jpeg 또는 png
+        format: imageFormat, // png 또는 jpeg
       };
 
       if (sessionData) {
@@ -279,6 +283,11 @@ export default function DownloadScreenshotButton({
           controller.abort();
         }
       }, 28000); // 30초 maxDuration보다 약간 작게
+
+      // 2/3: 이미지 생성중
+      if (isMountedRef.current) {
+        setStage('generate');
+      }
 
       const response = await fetch('/api/capture', {
         method: 'POST',
@@ -332,6 +341,11 @@ export default function DownloadScreenshotButton({
         throw new Error('이미지가 아닌 응답을 받았습니다.');
       }
 
+      // 3/3: 이미지 준비중
+      if (isMountedRef.current) {
+        setStage('prepare');
+      }
+
       // 프로그래스바 100% 완료
       completeProgress();
 
@@ -345,22 +359,28 @@ export default function DownloadScreenshotButton({
             const schoolName = data?.basic?.schoolName;
             if (schoolName) {
               const safeName = schoolName.replace(/[<>:"/\\|?*]/g, '_');
-              defaultFileName = `탄소중립_실천현황_${safeName}_${new Date().toISOString().split('T')[0]}.png`;
+              const fileExtension = format === 'pdf' ? 'pdf' : 'png';
+              defaultFileName = `탄소중립_실천현황_${safeName}_${new Date().toISOString().split('T')[0]}.${fileExtension}`;
             }
           }
         } catch {
           // 파싱 실패 시 기본값 사용
         }
         if (!defaultFileName) {
-          defaultFileName = `screenshot-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.png`;
+          const fileExtension = format === 'pdf' ? 'pdf' : 'png';
+          defaultFileName = `screenshot-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.${fileExtension}`;
         }
       }
 
       // 200~400ms 후 다운로드 트리거
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      // 다운로드 실행
-      downloadBlob(blob, defaultFileName);
+      // 다운로드 실행 (format에 따라 분기)
+      if (format === 'pdf') {
+        await downloadAsPDF(blob, defaultFileName);
+      } else {
+        downloadBlob(blob, defaultFileName);
+      }
 
       // 성공 처리
       if (isMountedRef.current) {
@@ -469,7 +489,12 @@ export default function DownloadScreenshotButton({
         {/* 버튼 내용 */}
         <span className="relative z-10 flex items-center gap-2">
           {isLoading ? (
-            <>이미지 생성중</>
+            <>
+              {stage === 'capture' && '화면 캡쳐중(1/3)'}
+              {stage === 'generate' && '이미지 생성중(2/3)'}
+              {stage === 'prepare' && '이미지 준비중(3/3)'}
+              {!stage && '이미지 생성중'}
+            </>
           ) : (
             children || '스크린샷 다운로드'
           )}

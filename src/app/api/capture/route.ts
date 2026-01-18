@@ -12,6 +12,7 @@ const DEFAULT_OUTPUT_WIDTH = 800;
 const DEFAULT_SELECTOR = '#capture-root';
 const READY_SELECTOR_TIMEOUT = 8000; // 8초
 const JPEG_QUALITY = 80; // JPEG 품질 기본값
+const DEFAULT_PADDING = 24; // 좌우 패딩 기본값 (px)
 
 // ✅ 2️⃣ puppeteer / chromium 설정: 환경별 분기 처리
 let puppeteer: any;
@@ -106,6 +107,8 @@ export async function POST(request: NextRequest) {
       viewportHeight = DEFAULT_VIEWPORT_HEIGHT,
       timeoutMs = READY_SELECTOR_TIMEOUT,
       quality = JPEG_QUALITY,
+      padding = DEFAULT_PADDING, // 좌우 패딩 (px, 0이면 패딩 없음)
+      useCssPadding = false, // CSS 주입 방식 사용 여부 (기본: false, sharp 후처리 사용)
     } = body;
 
     // ✅ 3️⃣ 보안: URL 검증
@@ -205,11 +208,17 @@ export async function POST(request: NextRequest) {
     try {
       const page = await browser.newPage();
 
-      // ✅ 7️⃣ 리소스 차단: analytics/tracking/media만 차단 (폰트는 기본 OFF)
+      // ✅ 7️⃣ 리소스 차단: analytics/tracking/media만 차단 (폰트는 기본 OFF - 명시적으로 허용)
       await page.setRequestInterception(true);
       page.on('request', (req: any) => {
         const resourceType = req.resourceType();
         const reqUrl = req.url();
+        
+        // ✅ 폰트는 무조건 허용 (폰트 깨짐 방지)
+        if (resourceType === 'font') {
+          req.continue();
+          return;
+        }
         
         // 차단할 URL 패턴 (analytics, tracking, ads 등)
         const blockedPatterns = [
@@ -300,6 +309,19 @@ export async function POST(request: NextRequest) {
       console.log(`[URL 추적] 요청 URL: ${url}`);
       console.log(`[URL 추적] 타겟 URL (screenshot 파라미터 추가): ${targetUrl}`);
       
+      // ✅ 네비게이션 추적: 모든 네비게이션 이벤트 로깅
+      const navigationEvents: Array<{ type: string; url: string; timestamp: number }> = [];
+      
+      const navigationHandler = (frame: any) => {
+        if (frame === page.mainFrame()) {
+          const navUrl = frame.url();
+          navigationEvents.push({ type: 'framenavigated', url: navUrl, timestamp: Date.now() });
+          console.log(`[URL 추적] 네비게이션 발생: ${navUrl}`);
+        }
+      };
+      
+      page.on('framenavigated', navigationHandler);
+      
       // ✅ 4️⃣ 추가 네비게이션을 흡수하기 위한 Promise 설정
       const navigationPromise = page.waitForNavigation({
         waitUntil: 'domcontentloaded',
@@ -328,9 +350,18 @@ export async function POST(request: NextRequest) {
       // ✅ 4️⃣ 최종 URL 확인
       const finalUrl = page.url();
       console.log(`[URL 추적] 최종 URL: ${finalUrl}`);
+      console.log(`[URL 추적] 네비게이션 이벤트 수: ${navigationEvents.length}`);
+      navigationEvents.forEach((event, idx) => {
+        console.log(`[URL 추적] 네비게이션 ${idx + 1}: ${event.type} → ${event.url}`);
+      });
+      
       if (url !== finalUrl && !finalUrl.includes(url.split('?')[0])) {
         console.warn(`[URL 추적] ⚠️ URL이 변경되었습니다! 요청: ${url} → 최종: ${finalUrl}`);
+        console.warn(`[URL 추적] ⚠️ 이는 리다이렉트 또는 클라이언트 사이드 라우팅 때문일 수 있습니다.`);
       }
+      
+      // 네비게이션 핸들러 제거
+      page.off('framenavigated', navigationHandler);
       
       console.log(`페이지 로드 시간: ${Date.now() - pageGotoTime}ms`);
       console.log('네비게이션 로그:', navigationLogs);
@@ -367,13 +398,227 @@ export async function POST(request: NextRequest) {
         // selector가 없어도 계속 진행 (하위 호환성)
       }
 
+      // ✅ 폰트 로딩 대기 (폰트 깨짐 방지)
+      const fontLoadTime = Date.now();
+      try {
+        // document.fonts.ready 대기 (최대 8초)
+        await Promise.race([
+          page.evaluate(() => {
+            if (document.fonts && document.fonts.ready) {
+              return document.fonts.ready;
+            }
+            return Promise.resolve();
+          }),
+          new Promise(resolve => setTimeout(resolve, 8000)), // 8초 타임아웃
+        ]);
+        
+        // 폰트 로딩 상태 확인 및 재시도
+        let fontStatus = await page.evaluate(() => {
+          if (document.fonts) {
+            const fonts = Array.from(document.fonts);
+            return {
+              total: fonts.length,
+              loaded: fonts.filter(f => f.status === 'loaded').length,
+              loading: fonts.filter(f => f.status === 'loading').length,
+              unloaded: fonts.filter(f => f.status === 'unloaded').length,
+            };
+          }
+          return { total: 0, loaded: 0, loading: 0, unloaded: 0 };
+        });
+        console.log(`폰트 로딩 상태 (1차): ${fontStatus.loaded}/${fontStatus.total} 로드됨, ${fontStatus.loading} 로딩중, ${fontStatus.unloaded} 미로드`);
+        
+        // 로딩 중인 폰트가 있으면 추가 대기
+        if (fontStatus.loading > 0) {
+          console.log('로딩 중인 폰트가 있습니다. 추가 대기...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          fontStatus = await page.evaluate(() => {
+            if (document.fonts) {
+              const fonts = Array.from(document.fonts);
+              return {
+                total: fonts.length,
+                loaded: fonts.filter(f => f.status === 'loaded').length,
+                loading: fonts.filter(f => f.status === 'loading').length,
+                unloaded: fonts.filter(f => f.status === 'unloaded').length,
+              };
+            }
+            return { total: 0, loaded: 0, loading: 0, unloaded: 0 };
+          });
+          console.log(`폰트 로딩 상태 (2차): ${fontStatus.loaded}/${fontStatus.total} 로드됨, ${fontStatus.loading} 로딩중, ${fontStatus.unloaded} 미로드`);
+        }
+        
+        console.log(`폰트 로딩 완료 (${Date.now() - fontLoadTime}ms)`);
+      } catch (error) {
+        console.warn('폰트 로딩 대기 중 에러 (무시):', error);
+      }
+
+      // ✅ 추가 폰트 안정화 대기 (폰트 렌더링 완료 보장)
+      // CDN 폰트(jsdelivr)가 완전히 로드되고 렌더링될 때까지 대기
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // ✅ 폰트 렌더링 확인: 실제 텍스트가 폰트로 렌더링되었는지 확인
+      try {
+        const fontRendered = await page.evaluate(() => {
+          // 주요 텍스트 요소들 확인
+          const body = document.body;
+          if (!body) return false;
+          
+          // computedStyle에서 fontFamily 확인
+          const style = window.getComputedStyle(body);
+          const fontFamily = style.fontFamily || '';
+          
+          // Jalnan 폰트가 로드되었는지 확인
+          return fontFamily.includes('Jalnan') || fontFamily.includes('var(--font-brand)');
+        });
+        
+        if (fontRendered) {
+          console.log('폰트 렌더링 확인: 폰트가 적용됨');
+        } else {
+          console.warn('폰트 렌더링 확인: 폰트가 적용되지 않았을 수 있음');
+        }
+      } catch (error) {
+        console.warn('폰트 렌더링 확인 중 에러 (무시):', error);
+      }
+
       // ✅ 4️⃣ 추가 안정화 대기 (React 컴포넌트 렌더링 대기)
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // ✅ 5️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기
+      // ✅ 5️⃣ 캡처 모드에서 내부 스크롤 제거 및 전체 높이로 펼치기
+      const scrollRemovalResult = await page.evaluate(() => {
+        // 1) html, body 스크롤 제거
+        const html = document.documentElement;
+        const body = document.body;
+        
+        const originalStyles: Record<string, any> = {
+          html: {
+            overflow: html.style.overflow,
+            height: html.style.height,
+            maxHeight: html.style.maxHeight,
+          },
+          body: {
+            overflow: body.style.overflow,
+            height: body.style.height,
+            maxHeight: body.style.maxHeight,
+          },
+        };
+        
+        // html, body 스크롤 제거
+        html.style.setProperty('overflow', 'visible', 'important');
+        html.style.setProperty('height', 'auto', 'important');
+        html.style.setProperty('max-height', 'none', 'important');
+        
+        body.style.setProperty('overflow', 'visible', 'important');
+        body.style.setProperty('height', 'auto', 'important');
+        body.style.setProperty('max-height', 'none', 'important');
+        
+        // 2) 실제 스크롤 컨테이너 찾기 및 제거
+        const scrollContainers: Array<{ selector: string; element: HTMLElement }> = [];
+        
+        const findAllElements = (root: Element) => {
+          const allElements = root.querySelectorAll('*');
+          for (const el of allElements) {
+            const htmlEl = el as HTMLElement;
+            if (!htmlEl) continue;
+            
+            const style = window.getComputedStyle(htmlEl);
+            const overflowY = style.overflowY || style.overflow;
+            const scrollHeight = htmlEl.scrollHeight;
+            const clientHeight = htmlEl.clientHeight;
+            
+            // 스크롤 컨테이너 조건: overflowY가 auto/scroll이고 scrollHeight > clientHeight
+            if ((overflowY === 'auto' || overflowY === 'scroll') && scrollHeight > clientHeight) {
+              // selector 생성 (간단한 방식)
+              let selector = '';
+              if (htmlEl.id) {
+                selector = `#${htmlEl.id}`;
+              } else if (htmlEl.className) {
+                const classes = Array.from(htmlEl.classList).slice(0, 2).join('.');
+                if (classes) selector = `.${classes}`;
+              }
+              
+              scrollContainers.push({
+                selector: selector || htmlEl.tagName.toLowerCase(),
+                element: htmlEl,
+              });
+              
+              // 스크롤 컨테이너 스타일 강제 변경
+              htmlEl.style.setProperty('overflow', 'visible', 'important');
+              htmlEl.style.setProperty('overflow-y', 'visible', 'important');
+              htmlEl.style.setProperty('overflow-x', 'visible', 'important');
+              htmlEl.style.setProperty('height', 'auto', 'important');
+              htmlEl.style.setProperty('max-height', 'none', 'important');
+            }
+          }
+        };
+        
+        findAllElements(document.body);
+        
+        return {
+          scrollContainersFound: scrollContainers.length,
+          scrollContainers: scrollContainers.map(sc => sc.selector),
+          originalStyles,
+        };
+      });
+      
+      console.log(`스크롤 제거: ${scrollRemovalResult.scrollContainersFound}개 컨테이너 처리됨`, scrollRemovalResult.scrollContainers);
+      
+      // ✅ requestAnimationFrame 2번 대기하여 레이아웃 안정화
+      await page.evaluate(() => {
+        return new Promise<void>((resolve) => {
+          let frameCount = 0;
+          const checkFrame = () => {
+            requestAnimationFrame(() => {
+              frameCount++;
+              if (frameCount >= 2) {
+                resolve();
+              } else {
+                checkFrame();
+              }
+            });
+          };
+          checkFrame();
+        });
+      });
+      
+      console.log('레이아웃 안정화 완료 (requestAnimationFrame 2회)');
+
+      // ✅ 6️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기
       await page.addStyleTag({
         content: `*{animation:none!important;transition:none!important;caret-color:transparent!important;}`,
       });
+      
+      // ✅ 7️⃣ (옵션 A) CSS 주입 방식으로 패딩 추가
+      if (useCssPadding && padding > 0) {
+        await page.addStyleTag({
+          content: `
+            #capture-root {
+              padding-left: ${padding}px !important;
+              padding-right: ${padding}px !important;
+              box-sizing: border-box !important;
+            }
+          `,
+        });
+        
+        // 레이아웃 안정화를 위해 requestAnimationFrame 2회 대기
+        await page.evaluate(() => {
+          return new Promise<void>((resolve) => {
+            let frameCount = 0;
+            const checkFrame = () => {
+              requestAnimationFrame(() => {
+                frameCount++;
+                if (frameCount >= 2) {
+                  resolve();
+                } else {
+                  checkFrame();
+                }
+              });
+            };
+            checkFrame();
+          });
+        });
+        
+        console.log(`CSS 패딩 추가 완료: 좌우 ${padding}px`);
+      }
 
       // ✅ 2️⃣ fullPage 스크린샷 금지. 특정 컨테이너만 캡처 (폴백 포함, 최대 2회 재시도)
       const screenshotTime = Date.now();
@@ -424,13 +669,178 @@ export async function POST(request: NextRequest) {
             throw new Error(`모든 selector 폴백 실패: ${selectorFallbacks.join(', ')}`);
           }
           
-          // 원본 캡처 (데스크톱 레이아웃 유지)
-          originalScreenshot = (await element.screenshot({
-            type: imageType,
-            quality: imageType === 'jpeg' ? quality : undefined,
-          })) as Buffer;
+          // ✅ 요소의 전체 높이(스크롤 포함) 계산 및 viewport 조정
+          const elementInfo = await page.evaluate((sel: string) => {
+            const el = document.querySelector(sel) as HTMLElement;
+            if (!el) return null;
+            return {
+              scrollHeight: el.scrollHeight,
+              scrollWidth: el.scrollWidth,
+              clientHeight: el.clientHeight,
+              clientWidth: el.clientWidth,
+            };
+          }, usedSelector);
           
-          console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes (사용된 selector: ${usedSelector})`);
+          if (elementInfo) {
+            console.log(`요소 크기: ${elementInfo.clientWidth}x${elementInfo.clientHeight} (보이는 영역), ${elementInfo.scrollWidth}x${elementInfo.scrollHeight} (전체 스크롤 영역)`);
+            
+            // ✅ 스크롤이 여전히 필요한지 확인 (스크롤 제거 후에도 scrollHeight > clientHeight인 경우)
+            const needsStitching = elementInfo.scrollHeight > elementInfo.clientHeight;
+            
+            if (needsStitching) {
+              console.log(`스크롤 컨테이너 스티칭 방식 사용 (scrollHeight: ${elementInfo.scrollHeight} > clientHeight: ${elementInfo.clientHeight})`);
+              
+              // ✅ Fallback: 스크롤 컨테이너 스티칭 방식
+              // 요소를 스크롤하면서 여러 장 캡처 후 sharp로 합성
+              const scrollStep = elementInfo.clientHeight * 0.9; // 90%씩 겹치기
+              const totalScroll = elementInfo.scrollHeight - elementInfo.clientHeight;
+              const numScreenshots = Math.ceil(totalScroll / scrollStep) + 1;
+              
+              console.log(`스티칭: ${numScreenshots}장 캡처 예정 (스크롤 단계: ${scrollStep}px)`);
+              
+              const screenshots: Buffer[] = [];
+              
+              // 요소를 맨 위로 스크롤
+              await page.evaluate((sel: string) => {
+                const el = document.querySelector(sel) as HTMLElement;
+                if (el) el.scrollTop = 0;
+              }, usedSelector);
+              
+              await new Promise(resolve => setTimeout(resolve, 200));
+              
+              for (let i = 0; i < numScreenshots; i++) {
+                // 현재 위치에서 캡처
+                const screenshot = (await element.screenshot({
+                  type: imageType,
+                  quality: imageType === 'jpeg' ? quality : undefined,
+                })) as Buffer;
+                
+                screenshots.push(screenshot);
+                
+                // 다음 위치로 스크롤 (마지막이 아니면)
+                if (i < numScreenshots - 1) {
+                  await page.evaluate((sel: string, step: number) => {
+                    const el = document.querySelector(sel) as HTMLElement;
+                    if (el) {
+                      el.scrollTop += step;
+                    }
+                  }, usedSelector, scrollStep);
+                  
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                }
+              }
+              
+              // ✅ sharp로 이미지 합성 (세로로 연결)
+              if (screenshots.length > 0) {
+                console.log(`이미지 스티칭 시작: ${screenshots.length}장 합성`);
+                
+                // 각 이미지의 크기 계산
+                const imageMetadata = await Promise.all(
+                  screenshots.map(async (img) => {
+                    const metadata = await sharp(img).metadata();
+                    return {
+                      width: metadata.width || 0,
+                      height: metadata.height || 0,
+                    };
+                  })
+                );
+                
+                const maxWidth = Math.max(...imageMetadata.map(m => m.width));
+                const totalHeight = imageMetadata.reduce((sum, m) => sum + m.height, 0);
+                
+                console.log(`스티칭 크기: ${maxWidth}x${totalHeight}px`);
+                
+                // 합성할 캔버스 생성
+                const composite = sharp({
+                  create: {
+                    width: maxWidth,
+                    height: totalHeight,
+                    channels: 4,
+                    background: { r: 255, g: 255, b: 255, alpha: 1 },
+                  },
+                });
+                
+                // 각 이미지를 세로로 배치 (겹치는 부분 제거)
+                let currentTop = 0;
+                const compositeInputs: Array<{ input: Buffer; top: number; left: number }> = [];
+                
+                for (let i = 0; i < screenshots.length; i++) {
+                  const imgHeight = imageMetadata[i].height;
+                  
+                  // 첫 번째 이미지는 전체 사용, 이후는 겹치는 부분 제거
+                  if (i === 0) {
+                    compositeInputs.push({
+                      input: screenshots[i],
+                      top: 0,
+                      left: 0,
+                    });
+                    currentTop = imgHeight;
+                  } else {
+                    // 이전 이미지와 겹치는 부분 계산 (10% 겹침)
+                    const overlap = Math.floor(imgHeight * 0.1);
+                    const actualTop = currentTop - overlap;
+                    
+                    compositeInputs.push({
+                      input: screenshots[i],
+                      top: actualTop,
+                      left: 0,
+                    });
+                    
+                    // 다음 위치 계산 (겹침 제외)
+                    currentTop = actualTop + imgHeight;
+                  }
+                }
+                
+                originalScreenshot = (await composite
+                  .composite(compositeInputs)
+                  .toBuffer()) as Buffer;
+                
+                console.log(`이미지 스티칭 완료: ${maxWidth}x${totalHeight}px`);
+              } else {
+                throw new Error('스티칭 캡처 실패: 캡처된 이미지가 없습니다.');
+              }
+            } else {
+              // ✅ 일반 캡처: viewport 조정 후 전체 요소 캡처
+              const currentViewport = page.viewport();
+              const requiredHeight = elementInfo.scrollHeight + 200; // 여유 공간
+              const requiredWidth = Math.max(elementInfo.scrollWidth, currentViewport?.width || 1900);
+              
+              if (currentViewport && (currentViewport.height < requiredHeight || currentViewport.width < requiredWidth)) {
+                await page.setViewport({
+                  width: requiredWidth,
+                  height: requiredHeight,
+                  deviceScaleFactor: 1,
+                });
+                console.log(`Viewport 조정: ${currentViewport.width}x${currentViewport.height} → ${requiredWidth}x${requiredHeight}`);
+                
+                // 레이아웃 재계산 대기
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // 요소 다시 찾기 (viewport 변경 후)
+                const updatedElement = await page.$(usedSelector);
+                if (updatedElement) {
+                  element = updatedElement;
+                }
+              }
+              
+              // ✅ 원본 캡처: 조정된 viewport에서 전체 요소 캡처
+              originalScreenshot = (await element.screenshot({
+                type: imageType,
+                quality: imageType === 'jpeg' ? quality : undefined,
+              })) as Buffer;
+            }
+            
+            console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes (사용된 selector: ${usedSelector}, 요소 높이: ${elementInfo?.scrollHeight || 'N/A'}px)`);
+          } else {
+            // fallback: 기본 캡처 (요소 정보 없음)
+            console.warn('요소 크기 정보를 가져올 수 없어 기본 캡처를 사용합니다.');
+            originalScreenshot = (await element.screenshot({
+              type: imageType,
+              quality: imageType === 'jpeg' ? quality : undefined,
+            })) as Buffer;
+            console.log(`원본 스크린샷 캡처 완료 (fallback): ${originalScreenshot.length} bytes`);
+          }
+          
           break; // 성공하면 루프 종료
         } catch (error: any) {
           const errorMessage = error?.message || String(error);
@@ -478,6 +888,26 @@ export async function POST(request: NextRequest) {
         withoutEnlargement: true 
       });
 
+      // ✅ (방법 B) sharp로 이미지 후처리: 좌우 패딩 추가 (기본 방식, 리사이즈 후 적용)
+      if (!useCssPadding && padding > 0) {
+        // 리사이즈된 이미지의 메타데이터 가져오기
+        const metadata = await img.metadata();
+        const currentWidth = metadata.width || outputWidth;
+        const currentHeight = metadata.height || 0;
+        
+        // 좌우 각각 padding만큼 확장 (흰색 배경)
+        img = img.extend({
+          left: padding,
+          right: padding,
+          top: 0,
+          bottom: 0,
+          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        });
+        
+        console.log(`이미지 패딩 추가 (sharp): ${currentWidth}x${currentHeight} → ${currentWidth + padding * 2}x${currentHeight}`);
+      }
+
+      // 포맷 설정 (패딩 추가 후)
       if (imageType === 'png') {
         // PNG 압축 레벨 9 (너무 느리면 6~8로 조정 가능)
         img = img.png({ compressionLevel: 9 });
