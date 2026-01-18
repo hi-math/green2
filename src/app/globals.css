@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* ✅ 한글 폰트 셀프호스팅 (서버리스 환경 대응) */
+@font-face {
+  font-family: "Jalnan";
+  src: url("/fonts/JalnanOTF00.woff2") format("woff2"),
+       url("/fonts/JalnanOTF00.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 폴백: CDN (로컬 폰트 로드 실패 시) */
 @font-face {
   font-family: "Jalnan";
   src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_four@1.2/JalnanOTF00.woff")
@@ -7,6 +18,7 @@
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0000-00FF; /* ASCII만, 한글은 위의 로컬 폰트 사용 */
 }
 
 :root {
@@ -29,7 +41,8 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-brand), var(--font-geist-sans), Arial, Helvetica,
+  /* ✅ 한글 폰트 우선 적용 (서버리스 환경 대응) */
+  font-family: var(--font-brand), "Noto Sans KR", "Nanum Gothic", var(--font-geist-sans), Arial, Helvetica,
     sans-serif;
   overflow: hidden;
   /* 브라우저별 zoom 지원 편차가 있어 transform 기반으로 강제 스케일 적용 */

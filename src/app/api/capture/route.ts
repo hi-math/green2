@@ -453,8 +453,8 @@ export async function POST(request: NextRequest) {
       }
 
       // ✅ 추가 폰트 안정화 대기 (폰트 렌더링 완료 보장)
-      // CDN 폰트(jsdelivr)가 완전히 로드되고 렌더링될 때까지 대기
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // 로컬 폰트가 완전히 로드되고 렌더링될 때까지 대기
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // ✅ 폰트 렌더링 확인: 실제 텍스트가 폰트로 렌더링되었는지 확인
       try {
@@ -467,14 +467,35 @@ export async function POST(request: NextRequest) {
           const style = window.getComputedStyle(body);
           const fontFamily = style.fontFamily || '';
           
-          // Jalnan 폰트가 로드되었는지 확인
-          return fontFamily.includes('Jalnan') || fontFamily.includes('var(--font-brand)');
+          // 한글 폰트가 로드되었는지 확인 (Jalnan, Noto Sans KR, Nanum Gothic 등)
+          const hasKoreanFont = fontFamily.includes('Jalnan') || 
+                               fontFamily.includes('Noto Sans KR') || 
+                               fontFamily.includes('Nanum Gothic') ||
+                               fontFamily.includes('var(--font-brand)');
+          
+          // 한글 텍스트가 제대로 렌더링되는지 확인 (네모가 아닌지)
+          const testElement = document.createElement('div');
+          testElement.style.position = 'absolute';
+          testElement.style.visibility = 'hidden';
+          testElement.style.fontFamily = fontFamily;
+          testElement.textContent = '한글테스트';
+          document.body.appendChild(testElement);
+          
+          const testWidth = testElement.offsetWidth;
+          document.body.removeChild(testElement);
+          
+          // 네모(□)로 렌더링되면 너비가 매우 작음 (폰트가 없을 때)
+          const isRenderedCorrectly = testWidth > 20;
+          
+          return hasKoreanFont && isRenderedCorrectly;
         });
         
         if (fontRendered) {
-          console.log('폰트 렌더링 확인: 폰트가 적용됨');
+          console.log('폰트 렌더링 확인: 한글 폰트가 정상적으로 적용됨');
         } else {
-          console.warn('폰트 렌더링 확인: 폰트가 적용되지 않았을 수 있음');
+          console.warn('폰트 렌더링 확인: 한글 폰트가 적용되지 않았을 수 있음 (네모로 표시될 수 있음)');
+          // 추가 대기
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       } catch (error) {
         console.warn('폰트 렌더링 확인 중 에러 (무시):', error);
@@ -582,10 +603,23 @@ export async function POST(request: NextRequest) {
       
       console.log('레이아웃 안정화 완료 (requestAnimationFrame 2회)');
 
-      // ✅ 6️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기
+      // ✅ 6️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기 및 폰트 강제 설정
       await page.addStyleTag({
-        content: `*{animation:none!important;transition:none!important;caret-color:transparent!important;}`,
+        content: `
+          * {
+            animation: none !important;
+            transition: none !important;
+            caret-color: transparent !important;
+          }
+          /* ✅ 한글 폰트 강제 설정 (서버리스 환경 대응) */
+          html, body, * {
+            font-family: "Jalnan", "Noto Sans KR", "Nanum Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif !important;
+          }
+        `,
       });
+      
+      // ✅ 폰트 강제 로드 후 추가 대기
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // ✅ 7️⃣ (옵션 A) CSS 주입 방식으로 패딩 추가
       if (useCssPadding && padding > 0) {
