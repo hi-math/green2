@@ -177,7 +177,7 @@ export default function Page3() {
   return (
     <div className="pt-6">
       <PageHeader
-        title="우리학교 실천 현황 확인"
+        title="우리학교 탄소중립 실천 현황"
         showIntro={false}
         actions={
           <div className="flex items-center gap-2">
@@ -188,7 +188,7 @@ export default function Page3() {
               height={1200}
             >
               <span className="flex items-center gap-2">
-                탄소중립 실천현황 다운로드 (PNG)
+                우리학교 실천 현황 다운로드 (PNG)
                 <DownloadIcon />
               </span>
             </DownloadScreenshotButton>
@@ -200,7 +200,7 @@ export default function Page3() {
               format="pdf"
             >
               <span className="flex items-center gap-2">
-                탄소중립 실천현황 다운로드 (PDF)
+                우리학교 실천 현황 다운로드 (PDF)
                 <DownloadIcon />
               </span>
             </DownloadScreenshotButton>
@@ -213,7 +213,7 @@ export default function Page3() {
         {isScreenshotMode && (
           <div className="mb-5 flex min-h-[64px] items-center gap-5">
             <div className="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
-              우리학교 실천 현황 확인
+              우리학교 탄소중립 실천 현황
             </div>
           </div>
         )}

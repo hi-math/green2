@@ -467,11 +467,11 @@ export async function POST(request: NextRequest) {
           const style = window.getComputedStyle(body);
           const fontFamily = style.fontFamily || '';
           
-          // 한글 폰트가 로드되었는지 확인 (Jalnan, Noto Sans KR, Nanum Gothic 등)
-          const hasKoreanFont = fontFamily.includes('Jalnan') || 
-                               fontFamily.includes('Noto Sans KR') || 
+          // 한글 폰트가 로드되었는지 확인 (Noto Sans KR, Nanum Gothic 등)
+          const hasKoreanFont = fontFamily.includes('Noto Sans KR') || 
                                fontFamily.includes('Nanum Gothic') ||
-                               fontFamily.includes('var(--font-brand)');
+                               fontFamily.includes('NotoSansKR') ||
+                               fontFamily.includes('Noto Sans');
           
           // 한글 텍스트가 제대로 렌더링되는지 확인 (네모가 아닌지)
           const testElement = document.createElement('div');
@@ -603,7 +603,7 @@ export async function POST(request: NextRequest) {
       
       console.log('레이아웃 안정화 완료 (requestAnimationFrame 2회)');
 
-      // ✅ 6️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기 및 폰트 강제 설정
+      // ✅ 6️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기
       await page.addStyleTag({
         content: `
           * {
@@ -611,15 +611,37 @@ export async function POST(request: NextRequest) {
             transition: none !important;
             caret-color: transparent !important;
           }
-          /* ✅ 한글 폰트 강제 설정 (서버리스 환경 대응) */
+        `,
+      });
+      
+      // ✅ 폰트 @font-face 주입 (Noto Sans KR 사용)
+      // Noto Sans KR은 시스템 폰트이거나 Google Fonts에서 로드되므로 별도 @font-face 불필요
+      // 대신 폰트가 로드되도록 대기
+      
+      // ✅ 스크린샷용 폰트 설정: Noto Sans KR 우선 사용 (화면과 일치)
+      await page.addStyleTag({
+        content: `
           html, body, * {
-            font-family: "Jalnan", "Noto Sans KR", "Nanum Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif !important;
+            font-family: "Noto Sans KR", "Nanum Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif !important;
           }
         `,
       });
       
-      // ✅ 폰트 강제 로드 후 추가 대기
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // ✅ 폰트 로드 대기 (document.fonts.ready)
+      await page.evaluate(() => {
+        return new Promise<void>((resolve) => {
+          if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(() => {
+              // 추가 안정화 대기
+              setTimeout(() => resolve(), 500);
+            });
+          } else {
+            setTimeout(() => resolve(), 1000);
+          }
+        });
+      });
+      
+      console.log('폰트 강제 설정 및 로드 완료');
       
       // ✅ 7️⃣ (옵션 A) CSS 주입 방식으로 패딩 추가
       if (useCssPadding && padding > 0) {

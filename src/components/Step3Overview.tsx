@@ -580,19 +580,19 @@ function BottomCards({ step2Selections }: { step2Selections: Record<string, bool
     return (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <ActionProgressCard
-          title="실천 행동"
+          title="실천 행동의 일상화"
           selectedCount={daily.selectedCount}
           totalCount={daily.totalCount}
           recommendedItems={daily.recommendedItems}
         />
         <ActionProgressCard
-          title="실천 문화"
+          title="실천 문화 확산"
           selectedCount={culture.selectedCount}
           totalCount={culture.totalCount}
           recommendedItems={culture.recommendedItems}
         />
         <ActionProgressCard
-          title="환경 구성"
+          title="학교 환경 조성"
           selectedCount={env.selectedCount}
           totalCount={env.totalCount}
           recommendedItems={env.recommendedItems}
@@ -644,6 +644,29 @@ function ActionProgressCard({
 
   const progressColor = getProgressColor(clamped);
 
+  // 이미지 선택: percentage에 따라
+  const getImageNumber = (pct: number): number => {
+    if (pct >= 75) return 1;
+    if (pct >= 50) return 2;
+    if (pct >= 25) return 3;
+    return 4;
+  };
+
+  const imageNumber = getImageNumber(percentage);
+
+  // 아이콘 크기 (줄임)
+  const iconHeight = 80;
+  // 총 바 높이를 아이콘에 맞춤
+  const totalBarHeight = iconHeight;
+  // 사각형 사이 간격
+  const barGap = 2; // 2px 간격
+  // 각 바의 높이 계산 (개수가 많을수록 작아짐, 간격 고려)
+  const barHeight = safeTotalCount > 0 
+    ? (totalBarHeight - (barGap * (safeTotalCount - 1))) / safeTotalCount 
+    : 0;
+  // 바의 가로 길이 (폭 더 넓힘: 30%)
+  const barWidth = '30%';
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/70 p-6 shadow-sm backdrop-blur">
       <div className="mb-4">
@@ -651,60 +674,87 @@ function ActionProgressCard({
           {title}
         </h3>
       </div>
-      <div className="flex flex-col items-center justify-center">
-        {/* 원형 진행 표시 */}
-        <div className="relative h-[140px] w-[140px] mb-4">
-          <svg viewBox="0 0 100 100" className="h-full w-full">
-            <circle
-              cx="50"
-              cy="50"
-              r={r}
-              stroke="#E5E7EB"
-              strokeWidth="8"
-              fill="none"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r={r}
-              stroke={progressColor}
-              strokeWidth="8"
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray={`${dash} ${c - dash}`}
-              transform="rotate(-90 50 50)"
-            />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-3xl font-black text-[var(--brand-b)] leading-none">
-              {safeSelectedCount}/{safeTotalCount}
-            </div>
-          </div>
+      <div className="flex gap-3 items-center justify-center">
+        {/* 왼쪽: SVG 아이콘 (배경과 어울리는 색상, 크기 줄임) */}
+        <div className="flex-shrink-0">
+          <img
+            src={`/icons/${imageNumber}.svg`}
+            alt={`진행률 ${percentage}%`}
+            className="w-auto object-contain"
+            style={{
+              height: `${iconHeight}px`,
+              // 테마 색상 --brand-b (#4b4629)와 어울리도록 필터 적용
+              // 배경(bg-white/70)과 조화롭게 갈색 계열로 변환
+              filter: 'brightness(0) saturate(100%) invert(18%) sepia(12%) saturate(1200%) hue-rotate(15deg) brightness(0.85)',
+            }}
+          />
         </div>
 
-        {/* 추천과제 섹션 */}
-        <div className="w-full mt-4">
-          <div className="mb-3 inline-flex rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 py-1.5 text-sm font-extrabold text-[var(--brand-b)]">
-            추천과제
+        {/* 오른쪽: 세로 바 (과제 개수만큼 사각형, 아래서부터 채움) */}
+        <div className="flex-shrink-0 flex flex-col items-center">
+          <div 
+            className="flex flex-col-reverse"
+            style={{ 
+              height: `${totalBarHeight}px`,
+              width: barWidth,
+              gap: `${barGap}px`,
+            }}
+          >
+            {Array.from({ length: safeTotalCount }, (_, index) => {
+              // 아래서부터 채우므로 역순으로 계산
+              const isChecked = index < safeSelectedCount;
+              return (
+                <div
+                  key={index}
+                  className={
+                    isChecked
+                      ? 'bg-[var(--brand-b)]' // 체크된 경우: 메인 테마 색상 (어두운 갈색)
+                      : 'bg-[color:rgba(75,70,41,0.15)]' // 체크 안 된 경우: 테마 색상의 옅은 버전
+                  }
+                  style={{ 
+                    height: `${barHeight}px`,
+                    width: '100%',
+                  }}
+                />
+              );
+            })}
           </div>
-          {allCompleted ? (
-            <div className="text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)]">
-              모든 과제를 달성했습니다.
-            </div>
-          ) : safeRecommendedItems.length > 0 ? (
-            <ul className="space-y-2 text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)] pl-6">
-              {safeRecommendedItems.map((item, idx) => {
-                const safeItem = typeof item === "string" ? item : String(item || "");
-                return (
-                  <li key={idx} className="flex gap-2">
-                    <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:rgba(75,70,41,0.35)]" />
-                    <span className="min-w-0">{safeItem}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
+          {/* 바 아래에 카운트 표시 (크기 줄임) */}
+          <div className="mt-1.5 text-xs font-extrabold text-[var(--brand-b)]">
+            {safeSelectedCount}/{safeTotalCount}
+          </div>
         </div>
+      </div>
+
+      {/* 추천과제 섹션 */}
+      <div className="w-full mt-4">
+        <div className="mb-3 inline-flex rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 py-1.5 text-sm font-extrabold text-[var(--brand-b)]">
+          추천과제
+        </div>
+        {allCompleted ? (
+          <div className="text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)]">
+            모든 과제를 달성했습니다.
+          </div>
+        ) : safeRecommendedItems.length > 0 ? (
+          <ul className="space-y-2 text-[12px] font-semibold text-[color:rgba(75,70,41,0.85)] pl-6">
+            {safeRecommendedItems.map((item, idx) => {
+              const safeItem = typeof item === "string" ? item : String(item || "");
+              // "학교 숲, 텃밭을 활용한 생태 · 탄소중립 연계 교육 프로그램 운영" 텍스트만 자간 줄임
+              const isLongText = safeItem.includes("학교 숲, 텃밭을 활용한 생태");
+              return (
+                <li key={idx} className="flex gap-2">
+                  <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[color:rgba(75,70,41,0.35)]" />
+                  <span 
+                    className="min-w-0"
+                    style={isLongText ? { letterSpacing: '-0.3px' } : undefined}
+                  >
+                    {safeItem}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
       </div>
     </div>
   );

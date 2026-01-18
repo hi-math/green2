@@ -95,7 +95,7 @@ export default function DownloadScreenshotButton({
   const startProgressAnimation = useCallback(() => {
     let currentProgress = 0;
     let lastUpdateTime = Date.now();
-    let interval = 30; // 초기 간격 (ms)
+    let interval = 50; // 초기 간격 (ms) - 더 느리게 시작
 
     const updateProgress = () => {
       if (!isMountedRef.current) return;
@@ -104,20 +104,20 @@ export default function DownloadScreenshotButton({
       const elapsed = now - lastUpdateTime;
 
       if (currentProgress < 60) {
-        // 0~60%: 30~80ms 간격으로 1~3% 랜덤 증가
+        // 0~60%: 50~120ms 간격으로 0.8~2% 랜덤 증가 (더 느리게)
         if (elapsed >= interval) {
-          const increment = Math.random() * 2 + 1; // 1~3%
+          const increment = Math.random() * 1.2 + 0.8; // 0.8~2%
           currentProgress = Math.min(currentProgress + increment, 60);
-          interval = Math.random() * 50 + 30; // 30~80ms
+          interval = Math.random() * 70 + 50; // 50~120ms (더 느린 간격)
           lastUpdateTime = now;
           setProgress(currentProgress);
         }
       } else if (currentProgress < 85) {
-        // 60~85%: 점점 느려지게 (증가폭/빈도 감소)
+        // 60~85%: 점점 느려지게 (증가폭/빈도 감소) - 더 느리게
         if (elapsed >= interval) {
-          const increment = Math.random() * 1.5 + 0.5; // 0.5~2%
+          const increment = Math.random() * 1.0 + 0.3; // 0.3~1.3% (더 작은 증가폭)
           currentProgress = Math.min(currentProgress + increment, 85);
-          interval = Math.min(interval * 1.1, 200); // 최대 200ms까지 증가
+          interval = Math.min(interval * 1.15, 300); // 최대 300ms까지 증가 (더 느리게)
           lastUpdateTime = now;
           setProgress(currentProgress);
         }
@@ -248,6 +248,9 @@ export default function DownloadScreenshotButton({
     startProgressAnimation();
 
     try {
+      // ✅ 1단계(화면 캡쳐중)를 더 오래 보이도록 딜레이 추가
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1초 대기
+
       // 세션 데이터 수집
       // ✅ 1️⃣ width/height는 레이아웃 기준으로 전달 (서버에서 800px로 최적화)
       const requestBody: any = {
@@ -490,9 +493,9 @@ export default function DownloadScreenshotButton({
         <span className="relative z-10 flex items-center gap-2">
           {isLoading ? (
             <>
-              {stage === 'capture' && '화면 캡쳐중(1/3)'}
-              {stage === 'generate' && '이미지 생성중(2/3)'}
-              {stage === 'prepare' && '이미지 준비중(3/3)'}
+              {stage === 'capture' && '화면 캡쳐중 (1/3)'}
+              {stage === 'generate' && '이미지 생성중 (2/3)'}
+              {stage === 'prepare' && '이미지 준비중 (3/3)'}
               {!stage && '이미지 생성중'}
             </>
           ) : (

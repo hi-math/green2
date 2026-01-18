@@ -48,7 +48,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 steps={[
                   "1단계\n학교 정보 입력",
                   "2단계\n우리학교 현황 입력",
-                  "3단계\n우리학교 실천 현황 확인",
+                  "3단계\n우리학교 탄소중립 실천 현황",
                   "4단계\n우리학교 실천 과제 선정",
                 ]}
                 currentStep={currentStep}
