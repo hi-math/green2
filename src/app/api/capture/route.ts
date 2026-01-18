@@ -289,9 +289,16 @@ export async function POST(request: NextRequest) {
         }, typedSessionData);
       }
 
+      // ✅ 5️⃣ User-Agent 설정 (headless 차단 회피)
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
       const pageGotoTime = Date.now();
       // ✅ 3️⃣ 페이지 로드: domcontentloaded만 사용 (networkidle 금지)
       const targetUrl = withScreenshotParam(url);
+      
+      // ✅ 4️⃣ requestedUrl과 최종 URL 로깅
+      console.log(`[URL 추적] 요청 URL: ${url}`);
+      console.log(`[URL 추적] 타겟 URL (screenshot 파라미터 추가): ${targetUrl}`);
       
       // ✅ 4️⃣ 추가 네비게이션을 흡수하기 위한 Promise 설정
       const navigationPromise = page.waitForNavigation({
@@ -318,8 +325,32 @@ export async function POST(request: NextRequest) {
         console.warn('네비게이션 대기 중 에러 (무시):', error);
       }
       
+      // ✅ 4️⃣ 최종 URL 확인
+      const finalUrl = page.url();
+      console.log(`[URL 추적] 최종 URL: ${finalUrl}`);
+      if (url !== finalUrl && !finalUrl.includes(url.split('?')[0])) {
+        console.warn(`[URL 추적] ⚠️ URL이 변경되었습니다! 요청: ${url} → 최종: ${finalUrl}`);
+      }
+      
       console.log(`페이지 로드 시간: ${Date.now() - pageGotoTime}ms`);
       console.log('네비게이션 로그:', navigationLogs);
+      
+      // ✅ 1️⃣ 디버깅 정보 수집
+      const debugInfo = await page.evaluate(() => {
+        const h1 = document.querySelector('h1');
+        return {
+          title: document.title,
+          h1Text: h1?.textContent?.trim() || 'N/A',
+          url: window.location.href,
+          contentPreview: document.documentElement.outerHTML.substring(0, 1500),
+        };
+      });
+      console.log('[디버깅] 페이지 정보:', {
+        title: debugInfo.title,
+        h1: debugInfo.h1Text,
+        url: debugInfo.url,
+        contentPreview: debugInfo.contentPreview.substring(0, 200) + '...',
+      });
 
       // ✅ 2️⃣ 준비 완료 대기: '#capture-root[data-ready="1"]' timeout 8000ms
       const readySelector = `${selector}[data-ready="1"]`;
@@ -344,13 +375,17 @@ export async function POST(request: NextRequest) {
         content: `*{animation:none!important;transition:none!important;caret-color:transparent!important;}`,
       });
 
-      // ✅ 2️⃣ fullPage 스크린샷 금지. 특정 컨테이너만 캡처 (최대 2회 재시도)
+      // ✅ 2️⃣ fullPage 스크린샷 금지. 특정 컨테이너만 캡처 (폴백 포함, 최대 2회 재시도)
       const screenshotTime = Date.now();
       const imageType = format === 'png' ? 'png' : 'jpeg';
+      
+      // ✅ 2️⃣ Selector 폴백: ['#capture-root','main','body']
+      const selectorFallbacks = [selector, 'main', 'body'];
       
       let originalScreenshot: Buffer | null = null;
       let captureAttempts = 0;
       const maxAttempts = 2;
+      let usedSelector = selector;
       
       while (captureAttempts < maxAttempts && !originalScreenshot) {
         captureAttempts++;
@@ -361,9 +396,32 @@ export async function POST(request: NextRequest) {
           const currentUrl = page.url();
           console.log(`현재 페이지 URL: ${currentUrl}`);
           
-          const element = await page.$(selector);
+          // Selector 폴백 시도
+          let element = null;
+          for (const fallbackSelector of selectorFallbacks) {
+            element = await page.$(fallbackSelector);
+            if (element) {
+              usedSelector = fallbackSelector;
+              console.log(`✅ Selector 발견: [${fallbackSelector}]`);
+              break;
+            } else {
+              console.log(`❌ Selector 없음: [${fallbackSelector}]`);
+            }
+          }
+          
           if (!element) {
-            throw new Error(`Selector [${selector}]를 찾을 수 없습니다.`);
+            // 모든 selector 실패 시 디버깅 정보 출력
+            const allSelectors = await page.evaluate(() => {
+              return {
+                hasCaptureRoot: !!document.querySelector('#capture-root'),
+                hasMain: !!document.querySelector('main'),
+                hasBody: !!document.querySelector('body'),
+                captureRootReady: document.querySelector('#capture-root')?.getAttribute('data-ready'),
+                bodyHTML: document.body?.innerHTML?.substring(0, 500) || 'N/A',
+              };
+            });
+            console.error('[디버깅] Selector 상태:', allSelectors);
+            throw new Error(`모든 selector 폴백 실패: ${selectorFallbacks.join(', ')}`);
           }
           
           // 원본 캡처 (데스크톱 레이아웃 유지)
@@ -372,7 +430,7 @@ export async function POST(request: NextRequest) {
             quality: imageType === 'jpeg' ? quality : undefined,
           })) as Buffer;
           
-          console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes`);
+          console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes (사용된 selector: ${usedSelector})`);
           break; // 성공하면 루프 종료
         } catch (error: any) {
           const errorMessage = error?.message || String(error);

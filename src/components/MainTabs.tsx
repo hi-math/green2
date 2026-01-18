@@ -425,7 +425,7 @@ function EmissionsForm({
     if (!form.electricWon.trim()) missing.push("전기 사용량");
     if (!form.gasWon.trim()) missing.push("가스 사용량");
     if (!form.waterWon.trim()) missing.push("물 사용량");
-    if (!form.solarAnnualKwh.trim()) missing.push("태양열 발전량");
+    if (!form.solarAnnualKwh.trim()) missing.push("신재생 에너지 사용량");
 
     if (missing.length > 0) {
       setMissingLabels(missing);
@@ -703,7 +703,7 @@ function SchoolNameRow({
               }
             }}
             onFocus={() => setOpen(true)}
-          placeholder="학교명을 입력하면 데이터를 불러옵니다."
+          placeholder="학교명을 입력하면 데이터가 자동 입력됩니다."
             lang="ko"
             inputMode="text"
             autoCapitalize="none"

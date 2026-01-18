@@ -17,7 +17,7 @@ const CARDS: Step2Card[] = [
     title: "실천 행동의 일상화",
     items: [
       { id: "daily-01", label: "학교 탄소중립 실천 과제 선정 및 실천" },
-      { id: "daily-02", label: "학교 탄소 배출 데이터 정기적 공유" },
+      { id: "daily-02", label: "학교 탄소 배출 데이터 정기적 확인 및 공유" },
       { id: "daily-03", label: "피크전력 시간대 확인 및 감축 관리" },
       { id: "daily-04", label: "학교 차원 대기전력 차단 관리" },
       { id: "daily-05", label: "디벗 충전 및 관리 기준 수립" },
@@ -31,7 +31,7 @@ const CARDS: Step2Card[] = [
     title: "실천 문화 확산",
     items: [
       { id: "culture-01", label: "탄소중립 학생 교육 프로그램 · 프로젝트 운영" },
-      { id: "culture-02", label: "학생 기후행동 동아리 운영" },
+      { id: "culture-02", label: "학생 동아리 중심 탄소중립 실천활동 정기적 운영" },
       { id: "culture-03", label: "교직원 탄소중립 연수 운영" },
       { id: "culture-04", label: "교직원 학습공동체 운영" },
       { id: "culture-05", label: "학부모 및 지역 연계 프로그램 · 프로젝트 운영" },
@@ -51,7 +51,7 @@ const CARDS: Step2Card[] = [
   {
     title: "학교 환경 조성",
     items: [
-      { id: "env-01", label: "교내 탄소 문해력 교육 공간 운영", tooltip: "게시판 등" },
+      { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내공간 조성" },
       { id: "env-02", label: "태양광 패널 설치 및 발전량 활용 교육 연계" },
       {
         id: "env-03",

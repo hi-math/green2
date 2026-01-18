@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { PageHeader } from "../../../components/PageHeader";
 import { Step3Overview } from "../../../components/Step3Overview";
 import DownloadScreenshotButton from "../../../components/DownloadScreenshotButton";
@@ -152,7 +152,23 @@ async function handleDownloadJPG() {
 
 export default function Page3() {
   const contentRef = useRef<HTMLDivElement>(null);
+  const captureRootRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    // screenshot=1 쿼리일 때 data-ready="1" 설정
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('screenshot') === '1' && captureRootRef.current) {
+        // 약간의 지연 후 ready 설정 (컴포넌트 렌더링 완료 대기)
+        const timer = setTimeout(() => {
+          if (captureRootRef.current) {
+            captureRootRef.current.setAttribute('data-ready', '1');
+          }
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
 
   return (
     <div className="pt-6">
@@ -187,8 +203,10 @@ export default function Page3() {
           </div>
         }
       />
-      <div ref={contentRef} data-pdf-content>
-        <Step3Overview />
+      <div id="capture-root" ref={captureRootRef}>
+        <div ref={contentRef} data-pdf-content>
+          <Step3Overview />
+        </div>
       </div>
     </div>
   );

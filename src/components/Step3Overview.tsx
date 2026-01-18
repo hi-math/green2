@@ -499,7 +499,7 @@ const STEP2_ALL_ITEMS = [
     label: "학교 탄소중립 실천 과제 선정 및 실천",
     category: "실천 행동의 일상화",
   },
-  { id: "daily-02", label: "학교 탄소 배출 데이터 정기적 공유", category: "실천 행동의 일상화" },
+  { id: "daily-02", label: "학교 탄소 배출 데이터 정기적 확인 및 공유", category: "실천 행동의 일상화" },
   { id: "daily-03", label: "피크전력 시간대 확인 및 감축 관리", category: "실천 행동의 일상화" },
   { id: "daily-04", label: "학교 차원 대기전력 차단 관리", category: "실천 행동의 일상화" },
   { id: "daily-05", label: "디벗 충전 및 관리 기준 수립", category: "실천 행동의 일상화" },
@@ -512,7 +512,7 @@ const STEP2_ALL_ITEMS = [
     label: "탄소중립 학생 교육 프로그램 · 프로젝트 운영",
     category: "실천 문화 확산",
   },
-  { id: "culture-02", label: "학생 기후행동 동아리 운영", category: "실천 문화 확산" },
+  { id: "culture-02", label: "학생 동아리 중심 탄소중립 실천활동 정기적 운영", category: "실천 문화 확산" },
   { id: "culture-03", label: "교직원 탄소중립 연수 운영", category: "실천 문화 확산" },
   { id: "culture-04", label: "교직원 학습공동체 운영", category: "실천 문화 확산" },
   {
@@ -531,7 +531,7 @@ const STEP2_ALL_ITEMS = [
   { id: "culture-10", label: "음식물 쓰레기 줄이기 프로그램 운영", category: "실천 문화 확산" },
   { id: "culture-11", label: "지역 농산물 적극 활용", category: "실천 문화 확산" },
   { id: "culture-12", label: "지역 푸드뱅크 활용", category: "실천 문화 확산" },
-  { id: "env-01", label: "교내 탄소 문해력 교육 공간 운영", category: "학교 환경 조성" },
+  { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내공간 조성", category: "학교 환경 조성" },
   { id: "env-02", label: "태양광 패널 설치 및 발전량 활용 교육 연계", category: "학교 환경 조성" },
   {
     id: "env-03",
@@ -842,17 +842,18 @@ export function Step3Overview() {
 
   // Step2 선택 상태 기반으로 카테고리별 실천행동 통계 계산 (직접 계산으로 변경)
 
-  // ✅ 캡처 준비 완료 표시
-  const captureRootRef = useRef<HTMLDivElement>(null);
-  
+  // ✅ 캡처 준비 완료 표시 (부모의 capture-root에 data-ready 설정)
   useEffect(() => {
-    if (isDataLoaded && captureRootRef.current) {
-      captureRootRef.current.setAttribute('data-ready', '1');
+    if (isDataLoaded && typeof window !== 'undefined') {
+      const captureRoot = document.getElementById('capture-root');
+      if (captureRoot) {
+        captureRoot.setAttribute('data-ready', '1');
+      }
     }
   }, [isDataLoaded]);
 
   return (
-    <div id="capture-root" ref={captureRootRef} className="w-full space-y-6">
+    <div className="w-full space-y-6">
       {/* Two separate cards side by side */}
       <div className="grid grid-cols-[1.4fr_1fr] gap-6">
         {/* Left card: 탄소배출량 (넓게) */}

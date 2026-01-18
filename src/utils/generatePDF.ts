@@ -128,7 +128,7 @@ export function generatePDF(data: PDFData) {
   // 탄소 배출 관련 정보 테이블
   autoTable(doc, {
     startY: yPos,
-    head: [["전기 사용량", "가스 사용량", "물 사용량", "태양열 발전량"]],
+    head: [["전기 사용량", "가스 사용량", "물 사용량", "신재생 에너지 사용량"]],
     body: [[
       data.electricKwh ? `${Number(data.electricKwh).toLocaleString("ko-KR")} kWh` : "-",
       data.gasM3 ? `${Number(data.gasM3).toLocaleString("ko-KR")}m³` : "-",
