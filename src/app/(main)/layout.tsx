@@ -1,8 +1,9 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Stepper } from "../../components/Stepper";
+import { ConfirmModal } from "../../components/ConfirmModal";
 
 function getStepFromPathname(pathname: string): number {
   // expects /1, /2, /3, /4 (and / treated as 1)
@@ -17,28 +18,54 @@ function getStepFromPathname(pathname: string): number {
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [pendingStep, setPendingStep] = useState<number | null>(null);
 
   const currentStep = useMemo(
     () => getStepFromPathname(pathname || "/"),
     [pathname],
   );
 
+  const handleStepClick = (step: number) => {
+    // 현재 단계와 같으면 이동하지 않음
+    if (step === currentStep) {
+      return;
+    }
+    // 3단계 또는 4단계에서는 모달 없이 바로 이동
+    if (currentStep === 3 || currentStep === 4) {
+      router.push(`/${step}`);
+      return;
+    }
+    // 1, 2단계에서 다른 단계로 이동하려고 하면 모달 표시
+    setPendingStep(step);
+  };
+
+  const handleConfirm = () => {
+    if (pendingStep !== null) {
+      router.push(`/${pendingStep}`);
+      setPendingStep(null);
+    }
+  };
+
+  const handleCancel = () => {
+    setPendingStep(null);
+  };
+
   // 헤더는 항상 먼저 렌더링
   return (
     <div className="flex h-[calc(100vh/var(--ui-scale))] flex-col overflow-hidden bg-transparent font-sans text-slate-900">
-      <header className="w-full shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+      <header className="w-full shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur relative z-50 opacity-100 visible">
         <div className="h-1 w-full bg-gradient-to-r from-[var(--brand-a)] to-[var(--brand-b)]" />
-        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[240px_1fr] items-center gap-5 px-4 py-3">
+        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[240px_1fr] items-center gap-4 px-4 py-2">
           <button
             type="button"
-            className="flex h-20 w-full items-center"
+            className="flex h-16 w-full items-center"
             onClick={() => router.push("/1")}
             aria-label="홈으로 이동"
           >
             <img
               src="/logo.png"
               alt="로고"
-              className="h-[72px] w-auto"
+              className="h-16 w-auto"
             />
           </button>
 
@@ -52,18 +79,29 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   "4단계\n우리학교 실천 과제 선정",
                 ]}
                 currentStep={currentStep}
-                onStepClick={(step) => router.push(`/${step}`)}
+                onStepClick={handleStepClick}
               />
             </div>
           </div>
         </div>
       </header>
 
-      <main className="no-scrollbar w-full flex-1 overflow-auto px-4 py-3">
+      <main className="no-scrollbar w-full flex-1 overflow-auto px-4 py-3 relative z-0">
         <section className="mx-auto h-full max-w-[1200px] min-h-0">
           {children}
         </section>
       </main>
+
+      {/* 경고 모달 */}
+      {pendingStep !== null && (
+        <ConfirmModal
+          title="경고"
+          message="입력한 데이터가 삭제될 수 있습니다."
+          confirmText="확인"
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
+      )}
     </div>
   );
 }

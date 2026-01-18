@@ -9,8 +9,8 @@ type PageHeaderProps = {
 
 export function PageHeader({ title, showIntro = true, introText, actions }: PageHeaderProps) {
   return (
-    <div className="mb-5 flex min-h-[64px] items-center gap-5">
-      <div className="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
+    <div className="mb-5 flex min-h-[64px] items-center gap-5 relative z-30 w-full opacity-100 visible">
+      <div className="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)] whitespace-nowrap">
         {title}
       </div>
       <div

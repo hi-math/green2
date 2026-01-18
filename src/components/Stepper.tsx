@@ -15,6 +15,43 @@ function SoilSproutIcon({ showLeaves }: { showLeaves: boolean }) {
   );
 }
 
+function StepIcon({ stepNum, isActive }: { stepNum: number; isActive: boolean }) {
+  // 1단계는 SoilSproutIcon 사용
+  if (stepNum === 1) {
+    return <SoilSproutIcon showLeaves={isActive} />;
+  }
+
+  // 2,3,4단계는 활성화되었을 때만 아이콘 표시
+  if (!isActive) {
+    return null;
+  }
+
+  // 단계별 아이콘
+  const iconMap: Record<number, string> = {
+    2: "/icons/22.svg",
+    3: "/icons/33.svg",
+    4: "/icons/44.svg",
+  };
+
+  const iconSrc = iconMap[stepNum];
+  if (!iconSrc) {
+    return null;
+  }
+
+  // 2, 4단계는 작게, 3단계는 기본 크기
+  const iconSize = stepNum === 2 || stepNum === 4 ? "h-5 w-5" : "h-6 w-6";
+
+  return (
+    <img
+      src={iconSrc}
+      alt=""
+      aria-hidden="true"
+      className={`${iconSize} select-none`}
+      draggable={false}
+    />
+  );
+}
+
 type StepperProps = {
   steps: string[];
   currentStep: number; // 1-based
@@ -25,31 +62,57 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
   const n = steps.length;
   const clamped = Math.max(1, Math.min(currentStep, n));
 
-  // Progress width rule that matches "-0--0-" spacing:
-  // With N equal columns, circle centers sit at (1/2N, 3/2N, ...).
-  // To make step1: left green + half next segment (equal lengths), we fill to 1/N.
-  // step2 -> 2/N, ... step(N-1) -> (N-1)/N, stepN -> 1.
+  // Progress calculation: connector line extends half segment before first circle and after last circle
+  // With px-3 (12px) padding and n equal grid columns:
+  // - Available width: 100% - 24px
+  // - Each column width (segment): (100% - 24px) / n
+  // - Half segment: (100% - 24px) / (2 * n)
+  // - First circle center: 12px + (100% - 24px) / (2 * n)
+  // - Last circle center: 12px + (100% - 24px) * (2n - 1) / (2 * n)
+  // - Connector starts: first circle center - half segment = 12px
+  // - Connector ends: last circle center + half segment = 12px + (100% - 24px)
   const progressPct = n <= 1 ? 0 : clamped >= n ? 100 : (clamped / n) * 100;
+  
+  // Connector line spans from first circle left half to last circle right half
+  const connectorLeft = "12px";
+  const connectorWidth = `calc(100% - 24px)`;
+  
+  // Progress bar: from start to current step's right half
+  // Step 1: extends to first circle right half (1 segment)
+  // Step 2: extends to second circle right half (2 segments)
+  // Step 4: extends to last circle right half (4 segments)
+  const segmentWidth = `calc((100% - 24px) / ${n})`;
+  const progressWidth = `calc(${segmentWidth} * ${clamped})`;
 
   return (
     <div className="w-full">
       {/* Row 1: circles equally spaced (grid) + continuous connector line behind */}
-      <div className="relative w-full px-3">
-        {/* connector line (centered on circle) */}
-        <div className="absolute left-3 right-3 top-4 h-[2px] rounded-full bg-slate-200" />
+      <div className="relative w-full">
+        {/* connector line (from first circle left half to last circle right half) */}
+        <div 
+          className="absolute top-4 h-[3px] rounded-full bg-slate-200"
+          style={{ 
+            left: connectorLeft,
+            width: connectorWidth
+          }}
+        />
         <div
-          className="absolute left-3 top-4 h-[2px] rounded-full bg-[var(--brand-a)]"
-          style={{ width: `${progressPct}%` }}
+          className="absolute top-4 h-[3px] rounded-full bg-gradient-to-r from-[var(--brand-a)] to-[var(--brand-b)]"
+          style={{ 
+            left: connectorLeft,
+            width: progressWidth
+          }}
         />
 
         <div
-          className="relative z-10 grid w-full items-center"
+          className="relative z-10 grid w-full items-center px-3"
           style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
         >
           {steps.map((label, idx) => {
             const stepNum = idx + 1;
             const isCurrent = stepNum === clamped;
             const isDone = stepNum < clamped;
+            const isActive = isCurrent || isDone;
             return (
               <div key={`circle-wrap-${stepNum}`} className="flex justify-center">
                 <button
@@ -67,7 +130,7 @@ export function Stepper({ steps, currentStep, onStepClick }: StepperProps) {
                   onClick={() => onStepClick?.(stepNum)}
                   title={label.replace("\n", " ")}
                 >
-                  <SoilSproutIcon showLeaves={isDone} />
+                  <StepIcon stepNum={stepNum} isActive={isActive} />
                 </button>
               </div>
             );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 
@@ -654,8 +655,8 @@ function ActionProgressCard({
 
   const imageNumber = getImageNumber(percentage);
 
-  // 아이콘 크기 (줄임)
-  const iconHeight = 80;
+  // 아이콘 크기 (10% 작게: 80 -> 72)
+  const iconHeight = 72;
   // 총 바 높이를 아이콘에 맞춤
   const totalBarHeight = iconHeight;
   // 사각형 사이 간격
@@ -761,6 +762,7 @@ function ActionProgressCard({
 }
 
 export function Step3Overview() {
+  const router = useRouter();
   const [schoolName, setSchoolName] = useState<string>("");
   const [basicNums, setBasicNums] = useState<{
     students: string;
@@ -942,6 +944,17 @@ export function Step3Overview() {
 
       {/* Bottom cards - 데이터 로드 완료 후에만 렌더링 */}
       {isDataLoaded && <BottomCards step2Selections={step2Selections} />}
+
+      {/* 다음으로 버튼 */}
+      <div className="mt-6 flex justify-end">
+        <button
+          type="button"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110"
+          onClick={() => router.push("/4")}
+        >
+          다음으로
+        </button>
+      </div>
     </div>
   );
 }
