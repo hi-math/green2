@@ -8,7 +8,7 @@ export const maxDuration = 30; // Vercel Pro 플랜 기준 (Hobby는 10초)
 // ✅ 캡쳐 최적화 상수
 const DEFAULT_VIEWPORT_WIDTH = 1900;
 const DEFAULT_VIEWPORT_HEIGHT = 1200;
-const DEFAULT_OUTPUT_WIDTH = 800;
+const DEFAULT_OUTPUT_WIDTH = 1600; // 해상도 2배 (800 -> 1600)
 const DEFAULT_SELECTOR = '#capture-root';
 const READY_SELECTOR_TIMEOUT = 8000; // 8초
 const JPEG_QUALITY = 80; // JPEG 품질 기본값
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
       defaultViewport: {
         width: finalViewportWidth,
         height: finalViewportHeight,
-        deviceScaleFactor: 1, // 고정
+        deviceScaleFactor: 2, // 해상도 2배
       },
       headless: true,
     };
@@ -785,7 +785,7 @@ export async function POST(request: NextRequest) {
                 await page.setViewport({
                   width: requiredWidth,
                   height: requiredHeight,
-                  deviceScaleFactor: 1,
+                  deviceScaleFactor: 2, // 해상도 2배
                 });
                 console.log(`Viewport 조정: ${currentViewport.width}x${currentViewport.height} → ${requiredWidth}x${requiredHeight}`);
                 
