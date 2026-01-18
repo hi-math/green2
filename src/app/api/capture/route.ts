@@ -238,12 +238,44 @@ export async function POST(request: NextRequest) {
       page.setDefaultTimeout(25000);
       page.setDefaultNavigationTimeout(25000);
 
-      // ✅ 4️⃣ 세션 데이터 주입: evaluateOnNewDocument 사용
+      // ✅ 2️⃣ 네비게이션 추적 로깅
+      const navigationLogs: string[] = [];
+      
+      // framenavigated 이벤트 리스너
+      page.on('framenavigated', (frame: any) => {
+        if (frame === page.mainFrame()) {
+          const navUrl = frame.url();
+          navigationLogs.push(`[framenavigated] ${navUrl}`);
+          console.log(`[네비게이션] framenavigated: ${navUrl}`);
+        }
+      });
+      
+      // request 이벤트에서 네비게이션 요청 및 3xx 응답 추적
+      page.on('request', (req: any) => {
+        if (req.isNavigationRequest()) {
+          const reqUrl = req.url();
+          navigationLogs.push(`[navigation-request] ${reqUrl}`);
+          console.log(`[네비게이션] Navigation request: ${reqUrl}`);
+        }
+      });
+      
+      page.on('response', (res: any) => {
+        const status = res.status();
+        if (status >= 300 && status < 400) {
+          const resUrl = res.url();
+          const location = res.headers()['location'] || res.headers()['Location'] || 'N/A';
+          navigationLogs.push(`[redirect] ${status} ${resUrl} -> ${location}`);
+          console.log(`[네비게이션] Redirect ${status}: ${resUrl} -> ${location}`);
+        }
+      });
+
+      // ✅ 1️⃣ 세션 데이터 주입: evaluateOnNewDocument만 사용 (evaluate 제거)
       if (sessionData && Object.keys(sessionData).length > 0) {
         const typedSessionData: Record<string, string> = sessionData as Record<string, string>;
         
         console.log('SessionData 주입 시작:', Object.keys(typedSessionData));
         
+        // ✅ evaluateOnNewDocument는 page.goto() 전에 설치해야 함
         await page.evaluateOnNewDocument((data: Record<string, string>) => {
           Object.keys(data).forEach((key: string) => {
             const value = data[key];
@@ -260,25 +292,34 @@ export async function POST(request: NextRequest) {
       const pageGotoTime = Date.now();
       // ✅ 3️⃣ 페이지 로드: domcontentloaded만 사용 (networkidle 금지)
       const targetUrl = withScreenshotParam(url);
+      
+      // ✅ 4️⃣ 추가 네비게이션을 흡수하기 위한 Promise 설정
+      const navigationPromise = page.waitForNavigation({
+        waitUntil: 'domcontentloaded',
+        timeout: 10000, // 10초 타임아웃
+      }).catch(() => {
+        // 네비게이션이 없으면 무시
+        return null;
+      });
+      
       await page.goto(targetUrl, {
         waitUntil: 'domcontentloaded',
         timeout: 25000,
       });
       
-      // ✅ 4️⃣ 페이지 로드 후 sessionStorage 재설정 (React 컴포넌트 리렌더링 보장)
-      if (sessionData && Object.keys(sessionData).length > 0) {
-        const typedSessionData: Record<string, string> = sessionData as Record<string, string>;
-        await page.evaluate((data: Record<string, string>) => {
-          Object.keys(data).forEach((key: string) => {
-            const value = data[key];
-            const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-            sessionStorage.setItem(key, stringValue);
-          });
-          window.dispatchEvent(new Event('storage'));
-        }, typedSessionData);
+      // ✅ 4️⃣ 추가 네비게이션 1회 흡수 (조건부)
+      try {
+        await Promise.race([
+          navigationPromise,
+          new Promise(resolve => setTimeout(resolve, 2000)), // 최대 2초 대기
+        ]);
+        console.log('추가 네비게이션 흡수 완료 (또는 없음)');
+      } catch (error) {
+        console.warn('네비게이션 대기 중 에러 (무시):', error);
       }
       
       console.log(`페이지 로드 시간: ${Date.now() - pageGotoTime}ms`);
+      console.log('네비게이션 로그:', navigationLogs);
 
       // ✅ 2️⃣ 준비 완료 대기: '#capture-root[data-ready="1"]' timeout 8000ms
       const readySelector = `${selector}[data-ready="1"]`;
@@ -303,31 +344,70 @@ export async function POST(request: NextRequest) {
         content: `*{animation:none!important;transition:none!important;caret-color:transparent!important;}`,
       });
 
-      // ✅ 2️⃣ fullPage 스크린샷 금지. 특정 컨테이너만 캡처
+      // ✅ 2️⃣ fullPage 스크린샷 금지. 특정 컨테이너만 캡처 (최대 2회 재시도)
       const screenshotTime = Date.now();
       const imageType = format === 'png' ? 'png' : 'jpeg';
       
-      let originalScreenshot: Buffer;
+      let originalScreenshot: Buffer | null = null;
+      let captureAttempts = 0;
+      const maxAttempts = 2;
       
-      try {
-        const element = await page.$(selector);
-        if (!element) {
-          throw new Error(`Selector [${selector}]를 찾을 수 없습니다.`);
+      while (captureAttempts < maxAttempts && !originalScreenshot) {
+        captureAttempts++;
+        console.log(`캡처 시도 ${captureAttempts}/${maxAttempts}...`);
+        
+        try {
+          // 현재 페이지 URL 확인
+          const currentUrl = page.url();
+          console.log(`현재 페이지 URL: ${currentUrl}`);
+          
+          const element = await page.$(selector);
+          if (!element) {
+            throw new Error(`Selector [${selector}]를 찾을 수 없습니다.`);
+          }
+          
+          // 원본 캡처 (데스크톱 레이아웃 유지)
+          originalScreenshot = (await element.screenshot({
+            type: imageType,
+            quality: imageType === 'jpeg' ? quality : undefined,
+          })) as Buffer;
+          
+          console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes`);
+          break; // 성공하면 루프 종료
+        } catch (error: any) {
+          const errorMessage = error?.message || String(error);
+          console.error(`캡처 시도 ${captureAttempts} 실패:`, errorMessage);
+          
+          // "Execution context was destroyed" 에러인 경우 재시도
+          if (errorMessage.includes('Execution context was destroyed') && captureAttempts < maxAttempts) {
+            console.log('Execution context 파괴 감지. 재시도 전 대기...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // ready selector 다시 대기
+            try {
+              await page.waitForSelector(readySelector, {
+                timeout: timeoutMs,
+                visible: true,
+              });
+              console.log('재시도: Ready selector 다시 발견됨.');
+            } catch {
+              console.warn('재시도: Ready selector를 찾을 수 없습니다.');
+            }
+            continue;
+          }
+          
+          // 다른 에러이거나 최대 시도 횟수 도달
+          if (captureAttempts >= maxAttempts) {
+            throw error;
+          }
         }
-        
-        // 원본 캡처 (데스크톱 레이아웃 유지)
-        originalScreenshot = (await element.screenshot({
-          type: imageType,
-          quality: imageType === 'jpeg' ? quality : undefined,
-        })) as Buffer;
-        
-        console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes`);
-      } catch (error) {
-        console.error(`Selector [${selector}] 캡처 실패:`, error);
-        throw error;
       }
       
-      console.log(`스크린샷 캡처 시간: ${Date.now() - screenshotTime}ms`);
+      if (!originalScreenshot) {
+        throw new Error(`캡처 실패: ${maxAttempts}회 시도 후에도 성공하지 못했습니다.`);
+      }
+      
+      console.log(`스크린샷 캡처 시간: ${Date.now() - screenshotTime}ms (시도 횟수: ${captureAttempts})`);
 
       // ✅ 5️⃣ 브라우저 종료 (메모리 누수 방지)
       await browser.close();
