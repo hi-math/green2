@@ -49,6 +49,7 @@ export default function DownloadScreenshotButton({
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
+  const progressRef = useRef(0); // 진행률 추적용 ref (항상 최신 값 보장)
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
@@ -91,9 +92,22 @@ export default function DownloadScreenshotButton({
     };
   }, [toast]);
 
+  // 안전한 progress 업데이트 (항상 증가만 하도록 보장)
+  const setProgressSafe = useCallback((newValue: number) => {
+    setProgress((prevProgress) => {
+      // 이전 값보다 크거나 같을 때만 업데이트
+      const safeValue = Math.max(prevProgress, newValue);
+      progressRef.current = safeValue;
+      return safeValue;
+    });
+  }, []);
+
   // 가짜 프로그래스바 업데이트
   const startProgressAnimation = useCallback(() => {
-    let currentProgress = 0;
+    // 초기화
+    progressRef.current = 0;
+    setProgress(0);
+    
     let lastUpdateTime = Date.now();
     let interval = 50; // 초기 간격 (ms) - 더 느리게 시작
 
@@ -102,18 +116,18 @@ export default function DownloadScreenshotButton({
 
       const now = Date.now();
       const elapsed = now - lastUpdateTime;
+      const currentProgress = progressRef.current; // ref에서 항상 최신 값 가져오기
 
       if (currentProgress < 60) {
         // 0~60%: 50~120ms 간격으로 0.8~2% 랜덤 증가 (더 느리게)
         if (elapsed >= interval) {
           const increment = Math.random() * 1.2 + 0.8; // 0.8~2%
           const newProgress = Math.min(currentProgress + increment, 60);
-          // 진행률이 뒤로 가지 않도록 보장
+          // 항상 증가만 하도록 보장 (ref 값과 비교)
           if (newProgress > currentProgress) {
-            currentProgress = newProgress;
             interval = Math.random() * 70 + 50; // 50~120ms (더 느린 간격)
             lastUpdateTime = now;
-            setProgress(currentProgress);
+            setProgressSafe(newProgress);
           }
         }
       } else if (currentProgress < 85) {
@@ -121,12 +135,11 @@ export default function DownloadScreenshotButton({
         if (elapsed >= interval) {
           const increment = Math.random() * 1.0 + 0.3; // 0.3~1.3% (더 작은 증가폭)
           const newProgress = Math.min(currentProgress + increment, 85);
-          // 진행률이 뒤로 가지 않도록 보장
+          // 항상 증가만 하도록 보장 (ref 값과 비교)
           if (newProgress > currentProgress) {
-            currentProgress = newProgress;
             interval = Math.min(interval * 1.15, 300); // 최대 300ms까지 증가 (더 느리게)
             lastUpdateTime = now;
-            setProgress(currentProgress);
+            setProgressSafe(newProgress);
           }
         }
       }
@@ -134,7 +147,7 @@ export default function DownloadScreenshotButton({
     };
 
     progressIntervalRef.current = setInterval(updateProgress, 16); // ~60fps
-  }, []);
+  }, [setProgressSafe]);
 
   // 프로그래스바를 100%로 완료
   const completeProgress = useCallback(() => {
@@ -154,6 +167,7 @@ export default function DownloadScreenshotButton({
       progressIntervalRef.current = null;
     }
     if (isMountedRef.current) {
+      progressRef.current = 0;
       setProgress(0);
       setIsLoading(false);
       setCanCancel(false);
@@ -313,7 +327,8 @@ export default function DownloadScreenshotButton({
 
       // 프로그래스바를 85%로 고정 (응답 헤더 수신 완료)
       if (isMountedRef.current) {
-        setProgress(85);
+        progressRef.current = Math.max(progressRef.current, 85);
+        setProgressSafe(85);
       }
 
       if (!response.ok) {
