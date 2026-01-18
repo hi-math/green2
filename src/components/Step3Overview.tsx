@@ -842,8 +842,17 @@ export function Step3Overview() {
 
   // Step2 선택 상태 기반으로 카테고리별 실천행동 통계 계산 (직접 계산으로 변경)
 
+  // ✅ 캡처 준비 완료 표시
+  const captureRootRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (isDataLoaded && captureRootRef.current) {
+      captureRootRef.current.setAttribute('data-ready', '1');
+    }
+  }, [isDataLoaded]);
+
   return (
-    <div className="w-full space-y-6">
+    <div id="capture-root" ref={captureRootRef} className="w-full space-y-6">
       {/* Two separate cards side by side */}
       <div className="grid grid-cols-[1.4fr_1fr] gap-6">
         {/* Left card: 탄소배출량 (넓게) */}

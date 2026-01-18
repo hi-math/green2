@@ -163,7 +163,7 @@ export default function Page3() {
           <div className="flex items-center gap-2">
             <DownloadScreenshotButton
               url={typeof window !== 'undefined' ? window.location.href : ''}
-              selector="[data-pdf-content]"
+              selector="#capture-root"
               width={1900}
               height={1200}
             >
@@ -174,7 +174,7 @@ export default function Page3() {
             </DownloadScreenshotButton>
             <DownloadScreenshotButton
               url={typeof window !== 'undefined' ? window.location.href : ''}
-              selector="[data-pdf-content]"
+              selector="#capture-root"
               width={1900}
               height={1200}
               format="pdf"

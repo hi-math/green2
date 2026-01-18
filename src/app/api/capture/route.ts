@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 // ✅ 1️⃣ 런타임 설정: Node.js runtime 명시 (Edge Runtime 사용 금지)
 export const runtime = 'nodejs';
 export const maxDuration = 30; // Vercel Pro 플랜 기준 (Hobby는 10초)
 
 // ✅ 캡쳐 최적화 상수
-const TARGET_WIDTH = 800; // 최종 출력 이미지 가로 크기
-const JPEG_QUALITY = 85; // JPEG 품질 (80-90 권장)
-const SELECTOR_TIMEOUT = 12000; // selector 대기 시간 (10-12초)
+const DEFAULT_VIEWPORT_WIDTH = 1900;
+const DEFAULT_VIEWPORT_HEIGHT = 1200;
+const DEFAULT_OUTPUT_WIDTH = 800;
+const DEFAULT_SELECTOR = '#capture-root';
+const READY_SELECTOR_TIMEOUT = 8000; // 8초
+const JPEG_QUALITY = 80; // JPEG 품질 기본값
 
 // ✅ 2️⃣ puppeteer / chromium 설정: 환경별 분기 처리
 let puppeteer: any;
@@ -71,124 +75,16 @@ function isAllowedUrl(url: string): boolean {
   }
 }
 
-// ✅ 1️⃣ selector 대기 로직: 안정화된 polling 방식 (타임아웃 단축)
-async function waitForSelectorStable(
-  page: any,
-  selector: string,
-  timeout: number = SELECTOR_TIMEOUT
-): Promise<boolean> {
-  const startTime = Date.now();
-  const pollInterval = 500; // 500ms마다 확인
-  
-  while (Date.now() - startTime < timeout) {
-    try {
-      // selector 존재 여부 확인
-      const exists = await page.evaluate((sel: string) => {
-        const element = document.querySelector(sel);
-        if (!element) return false;
-        
-        // HTMLElement로 타입 좁히기 및 visible 체크
-        const htmlElement = element as HTMLElement;
-        const style = window.getComputedStyle(htmlElement);
-        const rect = htmlElement.getBoundingClientRect();
-        
-        // visible 체크: display가 none이 아니고, 크기가 있고, 화면에 보이는 경우
-        return (
-          style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          style.opacity !== '0' &&
-          rect.width > 0 &&
-          rect.height > 0
-        );
-      }, selector);
-      
-      if (exists) {
-        // 추가 안정화: requestAnimationFrame 2회 대기
-        await page.evaluate(() => {
-          return new Promise<void>((resolve) => {
-            let frameCount = 0;
-            const checkFrame = () => {
-              requestAnimationFrame(() => {
-                frameCount++;
-                if (frameCount >= 2) {
-                  resolve();
-                } else {
-                  checkFrame();
-                }
-              });
-            };
-            checkFrame();
-          });
-        });
-        
-        // 폰트 로딩 대기
-        await page.evaluate(() => {
-          return document.fonts?.ready || Promise.resolve();
-        });
-        
-        // 최종 확인
-        const finalExists = await page.evaluate((sel: string) => {
-          return document.querySelector(sel) !== null;
-        }, selector);
-        
-        if (finalExists) {
-          return true;
-        }
-      }
-    } catch (error) {
-      // 에러 발생 시 계속 시도
-      console.warn('Selector polling 중 에러:', error);
-    }
-    
-    // 다음 polling까지 대기
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  return false;
-}
-
-// ✅ 2️⃣ selector 미존재 시 디버깅 로그
-async function logPageDebugInfo(page: any, selector: string) {
+// ✅ URL에 screenshot 파라미터 추가
+function withScreenshotParam(url: string): string {
   try {
-    const debugInfo = await page.evaluate((sel: string) => {
-      const element = document.querySelector(sel);
-      let selectorVisible = false;
-      
-      if (element) {
-        const htmlElement = element as HTMLElement;
-        const style = window.getComputedStyle(htmlElement);
-        const rect = htmlElement.getBoundingClientRect();
-        selectorVisible = (
-          style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          style.opacity !== '0' &&
-          rect.width > 0 &&
-          rect.height > 0
-        );
-      }
-      
-      return {
-        url: window.location.href,
-        title: document.title,
-        readyState: document.readyState,
-        selectorExists: element !== null,
-        selectorVisible: selectorVisible,
-        bodyText: document.body?.innerText?.substring(0, 500) || '',
-        html: document.documentElement.outerHTML.substring(0, 2000),
-      };
-    }, selector);
-    
-    console.error('=== Selector 디버깅 정보 ===');
-    console.error('URL:', debugInfo.url);
-    console.error('Title:', debugInfo.title);
-    console.error('ReadyState:', debugInfo.readyState);
-    console.error(`Selector [${selector}] 존재 여부:`, debugInfo.selectorExists);
-    console.error(`Selector [${selector}] 표시 여부:`, debugInfo.selectorVisible);
-    console.error('Body Text (앞 500자):', debugInfo.bodyText);
-    console.error('HTML (앞 2000자):', debugInfo.html);
-    console.error('===========================');
-  } catch (error) {
-    console.error('디버깅 정보 수집 실패:', error);
+    const u = new URL(url);
+    if (!u.searchParams.has('screenshot')) {
+      u.searchParams.set('screenshot', '1');
+    }
+    return u.toString();
+  } catch {
+    return url;
   }
 }
 
@@ -198,7 +94,19 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    const { url, selector, width = 1900, height = 1200, sessionData, format = 'jpeg' } = body;
+    const { 
+      url, 
+      selector = DEFAULT_SELECTOR, 
+      width = DEFAULT_VIEWPORT_WIDTH, 
+      height = DEFAULT_VIEWPORT_HEIGHT, 
+      sessionData, 
+      format = 'png',
+      outputWidth = DEFAULT_OUTPUT_WIDTH,
+      viewportWidth = DEFAULT_VIEWPORT_WIDTH,
+      viewportHeight = DEFAULT_VIEWPORT_HEIGHT,
+      timeoutMs = READY_SELECTOR_TIMEOUT,
+      quality = JPEG_QUALITY,
+    } = body;
 
     // ✅ 3️⃣ 보안: URL 검증
     if (!url || typeof url !== 'string') {
@@ -219,16 +127,15 @@ export async function POST(request: NextRequest) {
     // ✅ 2️⃣ puppeteer 설정
     const puppeteerInstance = await getPuppeteer();
     
-    // ✅ 1️⃣ viewport를 800px 기준으로 설정 (방법 B: 더 빠름)
-    // 레이아웃은 원본 크기로 렌더링하되, viewport를 800px로 제한하여 메모리/처리 시간 절약
-    const viewportWidth = TARGET_WIDTH;
-    const viewportHeight = Math.round((height / width) * TARGET_WIDTH); // 비율 유지
+    // ✅ 1️⃣ viewport는 1900x1200 고정 (옵션으로 받을 수 있게)
+    const finalViewportWidth = viewportWidth || DEFAULT_VIEWPORT_WIDTH;
+    const finalViewportHeight = viewportHeight || DEFAULT_VIEWPORT_HEIGHT;
     
     let browserConfig: any = {
       defaultViewport: {
-        width: viewportWidth,
-        height: viewportHeight,
-        deviceScaleFactor: 1,
+        width: finalViewportWidth,
+        height: finalViewportHeight,
+        deviceScaleFactor: 1, // 고정
       },
       headless: true,
     };
@@ -284,7 +191,9 @@ export async function POST(request: NextRequest) {
         executablePath: executablePath.substring(0, 50) + '...',
         argsCount: browserConfig.args.length,
         headless: browserConfig.headless,
-        viewport: `${viewportWidth}x${viewportHeight}`,
+        viewport: `${finalViewportWidth}x${finalViewportHeight}`,
+        selector,
+        outputWidth,
       });
     }
 
@@ -296,43 +205,28 @@ export async function POST(request: NextRequest) {
     try {
       const page = await browser.newPage();
 
-      // ✅ 4️⃣ 리소스 차단: 불필요한 리소스 로딩 방지
+      // ✅ 7️⃣ 리소스 차단: analytics/tracking/media만 차단 (폰트는 기본 OFF)
       await page.setRequestInterception(true);
       page.on('request', (req: any) => {
         const resourceType = req.resourceType();
-        const url = req.url();
+        const reqUrl = req.url();
         
-        // 차단할 리소스 타입 및 URL 패턴
-        const blockedTypes = ['image', 'media', 'font', 'websocket'];
+        // 차단할 URL 패턴 (analytics, tracking, ads 등)
         const blockedPatterns = [
-          /analytics/,
-          /tracking/,
-          /ads?/,
-          /advertisement/,
-          /doubleclick/,
-          /google-analytics/,
-          /googletagmanager/,
-          /facebook\.net/,
-          /youtube\.com\/embed/,
-          /\.mp4$/,
-          /\.webm$/,
+          /google-analytics|gtag|googletagmanager/i,
+          /doubleclick/i,
+          /hotjar|sentry|datadog|segment|mixpanel/i,
+          /\.mp4$|\.webm$/i,
         ];
         
-        // 큰 이미지 제외 (필요한 이미지만 허용)
-        if (resourceType === 'image' && !url.includes('data:image')) {
-          // data URI 이미지는 허용, 외부 이미지는 차단
-          req.abort();
-          return;
-        }
-        
         // 차단 패턴 확인
-        if (blockedPatterns.some(pattern => pattern.test(url))) {
+        if (blockedPatterns.some(pattern => pattern.test(reqUrl))) {
           req.abort();
           return;
         }
         
-        // 차단 타입 확인 (font는 제외 - 폰트는 필요할 수 있음)
-        if (blockedTypes.includes(resourceType) && resourceType !== 'font') {
+        // media와 websocket만 차단 (이미지, 폰트는 허용)
+        if (resourceType === 'media' || resourceType === 'websocket') {
           req.abort();
           return;
         }
@@ -344,115 +238,93 @@ export async function POST(request: NextRequest) {
       page.setDefaultTimeout(25000);
       page.setDefaultNavigationTimeout(25000);
 
-      // ✅ 4️⃣ 세션 데이터 주입: page.evaluateOnNewDocument 사용 (navigation 전에 실행)
+      // ✅ 4️⃣ 세션 데이터 주입: evaluateOnNewDocument 사용
       if (sessionData && Object.keys(sessionData).length > 0) {
-        // 타입 명시: sessionData를 Record<string, string>으로 명확히 지정
         const typedSessionData: Record<string, string> = sessionData as Record<string, string>;
         
-        // ✅ 4️⃣ evaluateOnNewDocument로 navigation 전에 sessionStorage 주입
+        console.log('SessionData 주입 시작:', Object.keys(typedSessionData));
+        
         await page.evaluateOnNewDocument((data: Record<string, string>) => {
-          // 모든 페이지 로드 전에 sessionStorage에 데이터 주입
           Object.keys(data).forEach((key: string) => {
             const value = data[key];
-            // sessionStorage.setItem은 string만 받으므로 안전하게 변환
             const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-            sessionStorage.setItem(key, stringValue);
+            try {
+              sessionStorage.setItem(key, stringValue);
+            } catch (e) {
+              console.error('SessionStorage 주입 실패:', key, e);
+            }
           });
         }, typedSessionData);
       }
 
       const pageGotoTime = Date.now();
-      // ✅ 4️⃣ 페이지 로드: networkidle2로 안정화
-      await page.goto(url, {
-        waitUntil: 'networkidle2',
+      // ✅ 3️⃣ 페이지 로드: domcontentloaded만 사용 (networkidle 금지)
+      const targetUrl = withScreenshotParam(url);
+      await page.goto(targetUrl, {
+        waitUntil: 'domcontentloaded',
         timeout: 25000,
       });
+      
+      // ✅ 4️⃣ 페이지 로드 후 sessionStorage 재설정 (React 컴포넌트 리렌더링 보장)
+      if (sessionData && Object.keys(sessionData).length > 0) {
+        const typedSessionData: Record<string, string> = sessionData as Record<string, string>;
+        await page.evaluate((data: Record<string, string>) => {
+          Object.keys(data).forEach((key: string) => {
+            const value = data[key];
+            const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+            sessionStorage.setItem(key, stringValue);
+          });
+          window.dispatchEvent(new Event('storage'));
+        }, typedSessionData);
+      }
+      
       console.log(`페이지 로드 시간: ${Date.now() - pageGotoTime}ms`);
 
-      // ✅ 4️⃣ 추가 안정화 대기 (최소화)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // ✅ 2️⃣ 준비 완료 대기: '#capture-root[data-ready="1"]' timeout 8000ms
+      const readySelector = `${selector}[data-ready="1"]`;
+      console.log(`Ready selector [${readySelector}] 대기 시작... (타임아웃: ${timeoutMs}ms)`);
+      
+      try {
+        await page.waitForSelector(readySelector, {
+          timeout: timeoutMs,
+          visible: true,
+        });
+        console.log(`Ready selector [${readySelector}] 발견됨.`);
+      } catch (error) {
+        console.warn(`Ready selector [${readySelector}]를 찾을 수 없습니다. 계속 진행합니다.`);
+        // selector가 없어도 계속 진행 (하위 호환성)
+      }
 
+      // ✅ 4️⃣ 추가 안정화 대기 (React 컴포넌트 렌더링 대기)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // ✅ 5️⃣ 캡처 모드에서 애니메이션/트랜지션 끄기
+      await page.addStyleTag({
+        content: `*{animation:none!important;transition:none!important;caret-color:transparent!important;}`,
+      });
+
+      // ✅ 2️⃣ fullPage 스크린샷 금지. 특정 컨테이너만 캡처
       const screenshotTime = Date.now();
-      let screenshot: Buffer;
-      let selectorFound = false;
       const imageType = format === 'png' ? 'png' : 'jpeg';
-
-      if (selector) {
-        // ✅ 3️⃣ 안정화된 selector 대기 로직 (타임아웃 단축)
-        console.log(`Selector [${selector}] 대기 시작...`);
-        selectorFound = await waitForSelectorStable(page, selector, SELECTOR_TIMEOUT);
-        
-        if (!selectorFound) {
-          // ✅ 3️⃣ selector 미존재 시 디버깅 로그
-          console.error(`Selector [${selector}]를 찾을 수 없습니다.`);
-          await logPageDebugInfo(page, selector);
-          
-          // ✅ 3️⃣ Fallback: fullPage screenshot으로 대체
-          console.warn('Selector를 찾을 수 없어 fullPage screenshot으로 fallback합니다.');
-          screenshot = (await page.screenshot({
-            type: imageType,
-            quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
-            fullPage: true,
-          })) as Buffer;
-        } else {
-          // ✅ selector를 찾은 경우 정상 처리
-          console.log(`Selector [${selector}] 발견됨.`);
-          
-          const element = await page.$(selector);
-          if (!element) {
-            // 예외 상황: polling에서는 찾았는데 실제로는 없음
-            console.warn('Selector polling에서는 찾았지만 실제 element가 없습니다. fallback합니다.');
-            screenshot = (await page.screenshot({
-              type: imageType,
-              quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
-              fullPage: true,
-            })) as Buffer;
-          } else {
-            // 스크린샷 전에 타이틀 추가
-            await page.evaluate((sel: string) => {
-              const targetElement = document.querySelector(sel);
-              if (targetElement) {
-                const existingTitle = targetElement.querySelector('.screenshot-title');
-                if (existingTitle) {
-                  existingTitle.remove();
-                }
-                
-                const titleDiv = document.createElement('div');
-                titleDiv.className = 'screenshot-title mb-5 flex min-h-[64px] items-center gap-5';
-                titleDiv.innerHTML = `
-                  <div class="shrink-0 text-2xl font-extrabold tracking-tight text-[var(--brand-b)]">
-                    우리학교 실천 현황 확인
-                  </div>
-                `;
-                targetElement.insertBefore(titleDiv, targetElement.firstChild);
-              }
-            }, selector);
-            
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            const boundingBox = await element.boundingBox();
-            if (!boundingBox) {
-              console.warn('요소의 크기를 측정할 수 없습니다. fallback합니다.');
-              screenshot = (await page.screenshot({
-                type: imageType,
-                quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
-                fullPage: true,
-              })) as Buffer;
-            } else {
-              screenshot = (await element.screenshot({
-                type: imageType,
-                quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
-              })) as Buffer;
-            }
-          }
+      
+      let originalScreenshot: Buffer;
+      
+      try {
+        const element = await page.$(selector);
+        if (!element) {
+          throw new Error(`Selector [${selector}]를 찾을 수 없습니다.`);
         }
-      } else {
-        // selector가 없는 경우 전체 페이지 캡처
-        screenshot = (await page.screenshot({
+        
+        // 원본 캡처 (데스크톱 레이아웃 유지)
+        originalScreenshot = (await element.screenshot({
           type: imageType,
-          quality: imageType === 'jpeg' ? JPEG_QUALITY : undefined,
-          fullPage: false,
+          quality: imageType === 'jpeg' ? quality : undefined,
         })) as Buffer;
+        
+        console.log(`원본 스크린샷 캡처 완료: ${originalScreenshot.length} bytes`);
+      } catch (error) {
+        console.error(`Selector [${selector}] 캡처 실패:`, error);
+        throw error;
       }
       
       console.log(`스크린샷 캡처 시간: ${Date.now() - screenshotTime}ms`);
@@ -461,18 +333,36 @@ export async function POST(request: NextRequest) {
       await browser.close();
       browser = null;
 
+      // ✅ 5️⃣ 최종 출력물은 가로 800px로 리사이징 (sharp 사용)
+      const resizeTime = Date.now();
+      let img = sharp(originalScreenshot).resize({ 
+        width: outputWidth, 
+        withoutEnlargement: true 
+      });
+
+      if (imageType === 'png') {
+        // PNG 압축 레벨 9 (너무 느리면 6~8로 조정 가능)
+        img = img.png({ compressionLevel: 9 });
+      } else {
+        // JPEG 품질
+        img = img.jpeg({ quality });
+      }
+
+      const resizedBuffer = await img.toBuffer();
+      console.log(`리사이즈 완료: ${originalScreenshot.length} bytes -> ${resizedBuffer.length} bytes (${Date.now() - resizeTime}ms)`);
+
       const totalTime = Date.now() - startTime;
       console.log(`총 처리 시간: ${totalTime}ms`);
 
-      // ✅ 2️⃣ API 응답: Buffer를 Uint8Array로 변환하여 NextResponse에 전달
-      const imageBuffer = new Uint8Array(screenshot);
+      // ✅ 8️⃣ 응답: 최종 산출물은 800px 버전
+      const imageBuffer = new Uint8Array(resizedBuffer);
       const contentType = imageType === 'png' ? 'image/png' : 'image/jpeg';
       
       return new NextResponse(imageBuffer, {
         status: 200,
         headers: {
           'Content-Type': contentType,
-          'Content-Length': screenshot.length.toString(),
+          'Content-Length': resizedBuffer.length.toString(),
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0',
