@@ -20,8 +20,15 @@ export function PageHeader({ title, showIntro = true, introText, actions }: Page
       {showIntro ? (
         <div className="min-w-0 flex-1">
           {introText ? (
-            <div className="text-base font-extrabold leading-6 text-[var(--brand-b)]">
-              {introText}
+            <div className="text-[12px] leading-5 text-[color:rgba(75,70,41,0.7)]">
+              <div className="font-extrabold text-[var(--brand-b)]">
+                {introText.split('\n\n')[0]}
+              </div>
+              {introText.split('\n\n')[1] && (
+                <span className="block">
+                  {introText.split('\n\n')[1]}
+                </span>
+              )}
             </div>
           ) : (
             <div className="text-[12px] leading-5 text-[color:rgba(75,70,41,0.7)]">

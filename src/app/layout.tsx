@@ -22,6 +22,9 @@ const notoSansKR = Noto_Sans_KR({
 export const metadata: Metadata = {
   title: "Carbon App",
   description: "탄소중립 실천 자가진단",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

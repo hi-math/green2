@@ -25,7 +25,11 @@ export default function Page2() {
 
   return (
     <div className="pt-6">
-      <PageHeader title="우리학교 실천 현황 입력" showIntro={true} introText="우리학교가 실천하고 있는 내용을 선택하세요." />
+      <PageHeader 
+        title="우리학교 실천 현황 입력" 
+        showIntro={true}
+        introText="우리학교가 실천하고 있는 내용을 선택하세요."
+      />
       <div id="capture-root" ref={captureRootRef}>
         <Step2Cards />
       </div>

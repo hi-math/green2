@@ -82,7 +82,7 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
-function SemiShareGauge({
+export function SemiShareGauge({
   parts,
   totalText,
   perPerson,
@@ -520,10 +520,10 @@ const STEP2_ALL_ITEMS = [
   { id: "daily-06", label: "공간별·시설별 조명 및 냉난방 규칙 마련", category: "실천 행동의 일상화" },
   { id: "daily-07", label: "학교 차원 일회용품 사용 자제 약속", category: "실천 행동의 일상화" },
   { id: "daily-08", label: "학교 차원 종이 인쇄물 사용 자제 약속", category: "실천 행동의 일상화" },
-  { id: "daily-09", label: "재활용을 위한 분리배출 규칙 준수", category: "실천 행동의 일상화" },
+  { id: "daily-09", label: "쓰레기 분리배출 규칙 준수", category: "실천 행동의 일상화" },
   {
     id: "culture-01",
-    label: "탄소중립 학생 교육 프로그램 · 프로젝트 운영",
+    label: "탄소중립 학생 교육 프로그램 실천 프로젝트 운영",
     category: "실천 문화 확산",
   },
   { id: "culture-02", label: "학생 동아리 중심 탄소중립 실천활동 정기적 운영", category: "실천 문화 확산" },
@@ -531,36 +531,28 @@ const STEP2_ALL_ITEMS = [
   { id: "culture-04", label: "교직원 학습공동체 운영", category: "실천 문화 확산" },
   {
     id: "culture-05",
-    label: "학부모 및 지역 연계 프로그램 · 프로젝트 운영",
+    label: "학부모 및 지역 연계 실천 프로그램 운영",
     category: "실천 문화 확산",
   },
   {
     id: "culture-06",
-    label: "학교 차원 탄소저감 생활규칙 마련",
+    label: "음식물 쓰레기 줄이기 실천 프로그램 운영",
     category: "실천 문화 확산",
   },
-  { id: "culture-07", label: "학생 주도 나눔 장터 운영", category: "실천 문화 확산" },
-  { id: "culture-08", label: "교복 물려주기 상시 운영", category: "실천 문화 확산" },
-  { id: "culture-09", label: "정기 채식 급식의 날 운영", category: "실천 문화 확산" },
-  { id: "culture-10", label: "음식물 쓰레기 줄이기 프로그램 운영", category: "실천 문화 확산" },
-  { id: "culture-11", label: "지역 농산물 적극 활용", category: "실천 문화 확산" },
-  { id: "culture-12", label: "지역 푸드뱅크 활용", category: "실천 문화 확산" },
+  { id: "culture-07", label: "채식 급식의 날 정기적으로 운영", category: "실천 문화 확산" },
+  { id: "culture-08", label: "급식 식자재 지역 농산물 적극 활용", category: "실천 문화 확산" },
+  { id: "culture-09", label: "교복 물려주기 상시 운영", category: "실천 문화 확산" },
+  { id: "culture-10", label: "학생 주도 나눔 장터 운영", category: "실천 문화 확산" },
   { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내공간 조성", category: "학교 환경 조성" },
-  { id: "env-02", label: "태양광 패널 설치 및 발전량 활용 교육 연계", category: "학교 환경 조성" },
   {
     id: "env-03",
     label: "냉 · 난방 효율 향상을 위한 환경 개선 사업 추진",
     category: "학교 환경 조성",
   },
-  { id: "env-04", label: "단열 강화를 위한 창문 단열필름 등 간단한 시설 개선", category: "학교 환경 조성" },
-  { id: "env-05", label: "학교 텃밭 운영을 위한 빗물저금통 설치 및 활용", category: "학교 환경 조성" },
-  { id: "env-06", label: "절수형 화장실 설비 도입 또는 단계적 개선", category: "학교 환경 조성" },
-  {
-    id: "env-07",
-    label: "학교 숲, 텃밭을 활용한 생태 · 탄소중립 연계 교육 프로그램 운영",
-    category: "학교 환경 조성",
-  },
+  { id: "env-05", label: "학교 숲·텃밭을 활용한 생물다양성 및 탄소중립 교육 프로그램 운영", category: "학교 환경 조성" },
+  { id: "env-07", label: "학교 텃밭 운영 및 조경수용 빗물 저금통 설치 및 활용", category: "학교 환경 조성" },
   { id: "env-08", label: "분리배출장을 활용한 자원순환 교육 프로그램 운영", category: "학교 환경 조성" },
+  { id: "env-02", label: "태양광 패널 설치 및 발전량 활용 교육 연계", category: "학교 환경 조성" },
 ];
 
 // 하단 카드들을 안전하게 렌더링하는 컴포넌트
