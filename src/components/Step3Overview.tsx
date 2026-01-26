@@ -975,7 +975,16 @@ export function Step3Overview() {
           <button
             type="button"
             className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
-            onClick={() => router.push("/4")}
+            onClick={() => {
+              router.push("/4");
+              // 페이지 전환 후 스크롤을 상단으로 이동
+              setTimeout(() => {
+                const mainElement = document.querySelector('main');
+                if (mainElement) {
+                  mainElement.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }, 100);
+            }}
           >
             다음으로
           </button>

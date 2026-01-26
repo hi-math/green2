@@ -31,6 +31,7 @@ function StepIcon({ stepNum, isActive }: { stepNum: number; isActive: boolean })
     2: "/icons/22.svg",
     3: "/icons/33.svg",
     4: "/icons/44.svg",
+    5: "/icons/44.svg", // 5단계 아이콘은 4단계와 동일하게 사용 (또는 나중에 55.svg로 변경 가능)
   };
 
   const iconSrc = iconMap[stepNum];
@@ -38,8 +39,8 @@ function StepIcon({ stepNum, isActive }: { stepNum: number; isActive: boolean })
     return null;
   }
 
-  // 2, 4단계는 작게, 3단계는 기본 크기
-  const iconSize = stepNum === 2 || stepNum === 4 ? "h-5 w-5" : "h-6 w-6";
+  // 2, 4, 5단계는 작게, 3단계는 기본 크기
+  const iconSize = stepNum === 2 || stepNum === 4 || stepNum === 5 ? "h-5 w-5" : "h-6 w-6";
 
   return (
     <img
