@@ -4,8 +4,6 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 import { SemiShareGauge } from "./Step3Overview";
-// PDF 기능 임시 비활성화
-// import { DownloadPlanPdfButton } from "./DownloadPlanPdfButton";
 
 const ReactApexChart = dynamic(
   () => import("react-apexcharts").then((mod) => mod.default),
@@ -617,48 +615,6 @@ export function Step4TaskSelection() {
 
   // selectedItemId 변경 시 detailEditingIndex는 handleRightItemClick에서 설정하므로 여기서는 리셋하지 않음
 
-  // PDF 다운로드용 payload 생성 - 임시 비활성화
-  /*
-  const pdfPayload = useMemo(() => {
-    // 카테고리별로 그룹화
-    const allSelectedItems = [...rightItems, ...extraTasks];
-    const categorizedItems = CATEGORY_ORDER.map((catName) => {
-      const itemsInCategory = allSelectedItems.filter((item) => item.category === catName);
-      return {
-        name: catName,
-        items: itemsInCategory.map((item) => ({
-          label: item.label.replace(/\n/g, " "),
-          details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
-        })),
-      };
-    }).filter((cat) => cat.items.length > 0);
-
-    // 학교추가과제 추가
-    const extraItems = allSelectedItems.filter((item) => item.category === EXTRA_CATEGORY);
-    if (extraItems.length > 0) {
-      categorizedItems.push({
-        name: EXTRA_CATEGORY,
-        items: extraItems.map((item) => ({
-          label: item.label.replace(/\n/g, " "),
-          details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
-        })),
-      });
-    }
-
-    return {
-      schoolName: schoolName || "○○학교",
-      targetPct: reductionPercent,
-      baselineYear,
-      nextYear,
-      usageValues: {
-        electric: usageValues.electric,
-        gas: usageValues.gas,
-        water: usageValues.water,
-      },
-      categories: categorizedItems,
-    };
-  }, [rightItems, extraTasks, itemInputs, schoolName, reductionPercent, baselineYear, nextYear, usageValues]);
-  */
 
   return (
     <div className="w-full space-y-4">
@@ -1210,11 +1166,6 @@ export function Step4TaskSelection() {
         </div>
       </div>
 
-      {/* PDF 다운로드 버튼 - 임시 비활성화
-      <div className="flex justify-end">
-        <DownloadPlanPdfButton payload={pdfPayload} />
-      </div>
-      */}
     </div>
   );
 }
