@@ -398,11 +398,9 @@ export async function POST(request: NextRequest) {
       executablePath: isLocal
         ? process.platform === "win32"
           ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-          : process.platform === "darwin"
-          ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
           : "/usr/bin/google-chrome"
         : await chromium.executablePath(),
-      headless: isLocal ? true : "new",
+      headless: true,
     });
 
     const page = await browser.newPage();
