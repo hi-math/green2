@@ -146,6 +146,7 @@ export function Step4TaskSelection() {
   const [leftItems, setLeftItems] = useState<TaskItem[]>([]);
   const [rightItems, setRightItems] = useState<TaskItem[]>([]);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [isDragOverDropZone, setIsDragOverDropZone] = useState(false);
   const dragItemRef = useRef<string | null>(null);
 
   const detailDragIndexRef = useRef<number | null>(null);
@@ -306,7 +307,7 @@ export function Step4TaskSelection() {
   const baselineYear = typeof energyYearUsed === "number" ? energyYearUsed : new Date().getFullYear() - 1;
   const nextYear = baselineYear + 1;
 
-  const reductionChartHeight = 88;
+  const reductionChartHeight = 120;
   const reductionChartScale = 0.7;
 
   const makeReductionOptions = (
@@ -314,18 +315,20 @@ export function Step4TaskSelection() {
     targetValue: number,
     baseline: number,
     next: number,
+    barColors: [string, string],
   ): ApexOptions => ({
     chart: {
       type: "bar",
+      sparkline: { enabled: false },
       toolbar: { show: false },
       animations: { enabled: true, speed: 700 },
-      sparkline: { enabled: false },
-      stacked: false,
-      offsetX: 0,
+      offsetY: -8,
+      parentHeightOffset: 0,
     },
     plotOptions: {
       bar: {
-        columnWidth: "55%",
+        horizontal: false,
+        columnWidth: "85%",
         borderRadius: 6,
         distributed: true,
         dataLabels: { position: "top" },
@@ -333,7 +336,7 @@ export function Step4TaskSelection() {
     },
     dataLabels: {
       enabled: true,
-      offsetY: -10,
+      offsetY: -16,
       formatter: (_val: number, opts?: any) => {
         const idx = opts?.dataPointIndex ?? 0;
         return idx === 0
@@ -341,29 +344,30 @@ export function Step4TaskSelection() {
           : fmt0.format(Math.round(targetValue));
       },
       style: {
-        fontSize: "7px",
-        fontWeight: 600,
+        fontSize: "9px",
+        fontWeight: 700,
         colors: ["#4b4629"],
       },
     },
-    stroke: { show: true, width: 1, colors: ["#ffffff"] },
+    stroke: { show: false },
     xaxis: {
       categories: [String(baseline), String(next)],
       labels: {
         show: true,
+        offsetY: -6,
         style: {
-          fontSize: "9px",
-          fontWeight: 600,
-          colors: ["rgba(75,70,41,0.6)"],
+          fontSize: "10px",
+          fontWeight: 700,
+          colors: ["rgba(75,70,41,0.75)"],
         },
       },
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
-    yaxis: { min: 0, max: 100, labels: { show: false } },
-    grid: { show: false, padding: { left: 0, right: 0, top: 0, bottom: 0 } },
+    yaxis: { show: false, min: 0, max: 100, labels: { show: false } },
+    grid: { show: false, padding: { left: 0, right: 0, top: -20, bottom: -12 } },
     legend: { show: false },
-    colors: ["#C97D60", "#4B4629"],
+    colors: barColors,
     tooltip: { enabled: false },
   });
 
@@ -397,9 +401,26 @@ export function Step4TaskSelection() {
     e.dataTransfer.dropEffect = "move";
   };
 
+  const handleDragEnterDropZone = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragItemRef.current) {
+      setIsDragOverDropZone(true);
+    }
+  };
+
+  const handleDragLeaveDropZone = (e: React.DragEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDragOverDropZone(false);
+    }
+  };
+
   // 드롭 핸들러
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragOverDropZone(false);
     const itemId = dragItemRef.current;
     if (!itemId) return;
 
@@ -603,20 +624,21 @@ export function Step4TaskSelection() {
           </div>
 
           <div className="flex-1 pb-4 pt-2">
-            <div className="grid grid-cols-3 items-start gap-3 rounded-md border border-slate-200 py-2">
+            <div className="grid grid-cols-3 items-start gap-3 py-2">
               {[
-                { label: "전기", usage: normalizedUsage.electric, target: normalizedTarget.electric, raw: usageValues.electric },
-                { label: "가스", usage: normalizedUsage.gas, target: normalizedTarget.gas, raw: usageValues.gas },
-                { label: "물", usage: normalizedUsage.water, target: normalizedTarget.water, raw: usageValues.water },
+                { label: "전기", unit: "kWh", usage: normalizedUsage.electric, target: normalizedTarget.electric, raw: usageValues.electric, colors: ["#6B4423", "#9A7050"] as [string, string], textColor: "#6B4423" },
+                { label: "가스", unit: "m³", usage: normalizedUsage.gas, target: normalizedTarget.gas, raw: usageValues.gas, colors: ["#C97D60", "#E0A893"] as [string, string], textColor: "#C97D60" },
+                { label: "물", unit: "m³", usage: normalizedUsage.water, target: normalizedTarget.water, raw: usageValues.water, colors: ["#7A9E6B", "#A8C09A"] as [string, string], textColor: "#7A9E6B" },
               ].map((item) => (
                 <div key={item.label} className="flex flex-col items-center">
-                  <div className="w-[110px] flex justify-center" style={{ height: reductionChartHeight }}>
+                  <div className="w-[100px] flex justify-center" style={{ height: reductionChartHeight }}>
                     <ReactApexChart
                       options={makeReductionOptions(
                         item.raw,
                         item.raw * reductionMultiplier,
                         baselineYear,
                         nextYear,
+                        item.colors,
                       )}
                       series={[
                         {
@@ -629,11 +651,11 @@ export function Step4TaskSelection() {
                       ]}
                       type="bar"
                       height={reductionChartHeight}
-                      width={110}
+                      width={100}
                     />
                   </div>
-                  <div className="mt-1 text-center text-[10px] font-semibold text-[color:rgba(75,70,41,0.8)]">
-                    {item.label}
+                  <div className="-mt-3 text-center text-[10px] font-bold text-[var(--brand-b)]">
+                    {item.label}({item.unit})
                   </div>
                 </div>
               ))}
@@ -686,10 +708,16 @@ export function Step4TaskSelection() {
       </div>
 
       {/* 3층: 우리학교 실천과제 + 세부 실천과제 */}
-      <div className="grid grid-cols-[7fr_3fr] gap-6">
+      <div className="grid grid-cols-[3fr_1fr] gap-3">
         <div
-          className="rounded-2xl border border-slate-200 bg-white/70 shadow-sm backdrop-blur flex flex-col"
+          className={`rounded-2xl border-2 bg-white/70 shadow-sm backdrop-blur flex flex-col transition-all duration-200 ${
+            isDragOverDropZone
+              ? "border-[color:rgba(75,70,41,0.35)] bg-[color:rgba(75,70,41,0.03)] shadow-md"
+              : "border-slate-200"
+          }`}
           onDragOver={handleDragOver}
+          onDragEnter={handleDragEnterDropZone}
+          onDragLeave={handleDragLeaveDropZone}
           onDrop={handleDrop}
         >
           <h3 className="px-4 pt-4 pb-3 text-sm font-extrabold text-[var(--brand-b)]">우리학교 실천과제</h3>
@@ -702,9 +730,9 @@ export function Step4TaskSelection() {
             )}
 
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-[0.8fr_1fr_1.4fr] gap-1">
                 {groupByCategory(rightItems, CATEGORY_ORDER).map((group) => (
-                  <div key={group.category} className="space-y-2">
+                  <div key={group.category} className="space-y-2 p-2">
                     <div className="text-[10px] font-semibold text-[color:rgba(75,70,41,0.7)]">
                       {group.category}
                     </div>
@@ -774,7 +802,7 @@ export function Step4TaskSelection() {
                     onClick={handleAddExtraTask}
                     className={`rounded-2xl border ${getCategoryBorderColor(
                       EXTRA_CATEGORY,
-                    )} ${getCategoryColor(EXTRA_CATEGORY)} px-2.5 py-1.5 text-[10px] font-semibold text-[color:rgba(75,70,41,0.85)] shadow-sm hover:shadow-lg`}
+                    )} ${getCategoryColor(EXTRA_CATEGORY)} px-2.5 py-1.5 text-[10px] font-semibold text-[color:rgba(75,70,41,0.85)] shadow-sm hover:shadow-lg cursor-pointer`}
                   >
                     추가
                   </button>
@@ -835,8 +863,8 @@ export function Step4TaskSelection() {
           <div className="flex-1 overflow-y-auto px-4 pb-4">
             {selectedItem ? (
               <div className="space-y-4">
-                <div className="text-xs font-extrabold text-[color:rgba(75,70,41,0.9)] mb-4">
-                  과제 내용: {selectedItem.label}
+                <div className="rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 py-2 mb-4">
+                  <span className="text-sm font-extrabold text-[var(--brand-b)]">{selectedItem.label}</span>
                 </div>
 
                 <div className="space-y-2">
@@ -909,7 +937,7 @@ export function Step4TaskSelection() {
                             <button
                               type="button"
                               onClick={() => setDetailEditingIndex(index)}
-                              className="inline-flex h-4 w-4 items-center justify-center"
+                              className="inline-flex h-4 w-4 items-center justify-center cursor-pointer"
                               aria-label="세부 실천과제 편집"
                             >
                               <img src="/icons/edit.svg" alt="" className="h-3 w-3 opacity-60" />
@@ -920,7 +948,7 @@ export function Step4TaskSelection() {
                             <button
                               type="button"
                               onClick={() => handleRemoveInput(selectedItemId!, index)}
-                              className="inline-flex h-4 w-4 items-center justify-center text-[12px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
+                              className="inline-flex h-4 w-4 items-center justify-center cursor-pointer text-[12px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
                               aria-label="세부 실천과제 삭제"
                             >
                               ×
