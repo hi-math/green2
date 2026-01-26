@@ -402,7 +402,7 @@ export async function POST(request: NextRequest) {
           ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
           : "/usr/bin/google-chrome"
         : await chromium.executablePath(),
-      headless: isLocal ? true : chromium.headless,
+      headless: isLocal ? true : "new",
     });
 
     const page = await browser.newPage();
