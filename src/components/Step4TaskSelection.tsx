@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 import { SemiShareGauge } from "./Step3Overview";
+import { DownloadPlanPdfButton } from "./DownloadPlanPdfButton";
 
 const ReactApexChart = dynamic(
   () => import("react-apexcharts").then((mod) => mod.default),
@@ -167,6 +168,7 @@ export function Step4TaskSelection() {
   } | null>(null);
 
   const [energyYearUsed, setEnergyYearUsed] = useState<number | null>(null);
+  const [schoolName, setSchoolName] = useState<string>("");
   const [basicNums, setBasicNums] = useState<{
     students: string;
     staff: string;
@@ -188,6 +190,7 @@ export function Step4TaskSelection() {
         solar: e.solarAnnualKwh ?? "",
       });
       setEnergyYearUsed(typeof snap?.yearUsed === "number" ? snap.yearUsed : null);
+      setSchoolName(String(snap?.basic?.schoolName ?? "").trim());
       setBasicNums({
         students: String(snap?.basic?.studentCount ?? "").trim(),
         staff: String(snap?.basic?.staffCount ?? "").trim(),
@@ -579,6 +582,47 @@ export function Step4TaskSelection() {
   useEffect(() => {
     setDetailEditingIndex(null);
   }, [selectedItemId]);
+
+  // PDF 다운로드용 payload 생성
+  const pdfPayload = useMemo(() => {
+    // 카테고리별로 그룹화
+    const allSelectedItems = [...rightItems, ...extraTasks];
+    const categorizedItems = CATEGORY_ORDER.map((catName) => {
+      const itemsInCategory = allSelectedItems.filter((item) => item.category === catName);
+      return {
+        name: catName,
+        items: itemsInCategory.map((item) => ({
+          label: item.label.replace(/\n/g, " "),
+          details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
+        })),
+      };
+    }).filter((cat) => cat.items.length > 0);
+
+    // 학교추가과제 추가
+    const extraItems = allSelectedItems.filter((item) => item.category === EXTRA_CATEGORY);
+    if (extraItems.length > 0) {
+      categorizedItems.push({
+        name: EXTRA_CATEGORY,
+        items: extraItems.map((item) => ({
+          label: item.label.replace(/\n/g, " "),
+          details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
+        })),
+      });
+    }
+
+    return {
+      schoolName: schoolName || "○○학교",
+      targetPct: reductionPercent,
+      baselineYear,
+      nextYear,
+      usageValues: {
+        electric: usageValues.electric,
+        gas: usageValues.gas,
+        water: usageValues.water,
+      },
+      categories: categorizedItems,
+    };
+  }, [rightItems, extraTasks, itemInputs, schoolName, reductionPercent, baselineYear, nextYear, usageValues]);
 
   return (
     <div className="w-full space-y-4">
@@ -973,6 +1017,11 @@ export function Step4TaskSelection() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* PDF 다운로드 버튼 */}
+      <div className="flex justify-end">
+        <DownloadPlanPdfButton payload={pdfPayload} />
       </div>
     </div>
   );
