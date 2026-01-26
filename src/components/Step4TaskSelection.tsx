@@ -4,7 +4,8 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 import { SemiShareGauge } from "./Step3Overview";
-import { DownloadPlanPdfButton } from "./DownloadPlanPdfButton";
+// PDF 기능 임시 비활성화
+// import { DownloadPlanPdfButton } from "./DownloadPlanPdfButton";
 
 const ReactApexChart = dynamic(
   () => import("react-apexcharts").then((mod) => mod.default),
@@ -151,6 +152,7 @@ export function Step4TaskSelection() {
   const dragItemRef = useRef<string | null>(null);
 
   const detailDragIndexRef = useRef<number | null>(null);
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [detailDraggingIndex, setDetailDraggingIndex] = useState<number | null>(null);
   const [detailEditingIndex, setDetailEditingIndex] = useState<number | null>(null);
 
@@ -465,10 +467,44 @@ export function Step4TaskSelection() {
 
   const handleRightItemClick = (itemId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // blur 타이머가 있으면 취소
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    
+    // 이미 선택된 과제를 다시 클릭하면 첫 번째 항목 수정 모드
+    if (selectedItemId === itemId) {
+      const inputs = itemInputs[itemId] || [""];
+      // 저장된 내용이 있는 첫 번째 항목을 수정 모드로
+      const firstNonEmptyIndex = inputs.findIndex((v) => v.trim().length > 0);
+      if (firstNonEmptyIndex >= 0) {
+        setDetailEditingIndex(firstNonEmptyIndex);
+      } else {
+        setDetailEditingIndex(0);
+      }
+      return;
+    }
+    
+    // 현재 입력 상태 확인
+    const currentInputs = itemInputs[itemId] || [""];
+    const hasExistingContent = currentInputs.some((v) => v.trim().length > 0);
+    
     setSelectedItemId(itemId);
     if (!itemInputs[itemId]) {
       setItemInputs((prev) => ({ ...prev, [itemId]: [""] }));
     }
+    
+    // 새로 선택된 과제의 첫 번째 항목을 수정 모드로
+    setTimeout(() => {
+      if (hasExistingContent) {
+        const firstNonEmptyIndex = currentInputs.findIndex((v) => v.trim().length > 0);
+        setDetailEditingIndex(firstNonEmptyIndex >= 0 ? firstNonEmptyIndex : 0);
+      } else {
+        setDetailEditingIndex(0);
+      }
+    }, 50);
   };
 
   const handleInputChange = (itemId: string, index: number, value: string) => {
@@ -579,11 +615,10 @@ export function Step4TaskSelection() {
     return inputs.some((input) => input.trim().length > 0);
   };
 
-  useEffect(() => {
-    setDetailEditingIndex(null);
-  }, [selectedItemId]);
+  // selectedItemId 변경 시 detailEditingIndex는 handleRightItemClick에서 설정하므로 여기서는 리셋하지 않음
 
-  // PDF 다운로드용 payload 생성
+  // PDF 다운로드용 payload 생성 - 임시 비활성화
+  /*
   const pdfPayload = useMemo(() => {
     // 카테고리별로 그룹화
     const allSelectedItems = [...rightItems, ...extraTasks];
@@ -623,6 +658,7 @@ export function Step4TaskSelection() {
       categories: categorizedItems,
     };
   }, [rightItems, extraTasks, itemInputs, schoolName, reductionPercent, baselineYear, nextYear, usageValues]);
+  */
 
   return (
     <div className="w-full space-y-4">
@@ -911,48 +947,105 @@ export function Step4TaskSelection() {
                   <span className="text-sm font-extrabold text-[var(--brand-b)]">{selectedItem.label}</span>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-0">
                   {(() => {
-                    const hasNonEmptyInputs = selectedItemInputs.some((v) => v.trim().length > 0);
+                    // 저장된 내용이 있는지 확인 (trim된 상태로)
+                    // 단, 현재 편집 중인 항목은 제외 (편집 중에는 아직 저장되지 않은 것으로 간주)
+                    const savedInputs = selectedItemInputs
+                      .map((v, idx) => ({ value: v, index: idx }))
+                      .filter(({ value, index }) => value.trim().length > 0 && detailEditingIndex !== index);
+                    const hasSavedContent = savedInputs.length > 0;
                     
-                    // 기존 내용이 없을 때: 빈 입력창 하나만 표시
-                    if (!hasNonEmptyInputs) {
-                      return (
-                        <div className="flex items-center gap-2 px-1 py-1">
-                          <span
-                            className="h-1 w-1 rounded-full"
-                            style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
-                          />
-                          <textarea
-                            className="detail-input flex-1 rounded-lg border border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] shadow-[inset_0_-1px_0_rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-b)]/20 resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
-                            rows={1}
-                            value={selectedItemInputs[0] || ""}
-                            placeholder="입력하세요"
-                            onChange={(e) => {
-                              handleInputChange(selectedItemId!, 0, e.target.value);
-                              const el = e.currentTarget;
-                              el.style.height = "auto";
-                              el.style.height = `${el.scrollHeight}px`;
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && !e.shiftKey) {
-                                e.preventDefault();
-                                (e.target as HTMLTextAreaElement).blur();
-                              }
-                            }}
-                            style={{ height: "auto" }}
-                            autoFocus
-                          />
-                        </div>
-                      );
-                    }
-                    
-                    // 기존 내용이 있을 때: 내용만 표시 + 추가 버튼
                     return (
                       <>
                         {selectedItemInputs.map((value, index) => {
                           const isEmpty = value.trim().length === 0;
-                          if (isEmpty && detailEditingIndex !== index) return null;
+                          const isEditing = detailEditingIndex === index;
+                          
+                          // 저장된 내용이 없을 때: 첫 번째 입력창만 항상 표시
+                          if (!hasSavedContent) {
+                            if (index !== 0) return null;
+                            return (
+                              <div key={index} className="flex items-center gap-2 px-1 py-1">
+                                <span
+                                  className="h-1 w-1 rounded-full"
+                                  style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
+                                />
+                                <textarea
+                                  className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
+                                  rows={1}
+                                  value={value}
+                                  placeholder="입력하세요"
+                                  onChange={(e) => {
+                                    if (detailEditingIndex !== index) {
+                                      setDetailEditingIndex(index);
+                                    }
+                                    handleInputChange(selectedItemId!, index, e.target.value);
+                                    const el = e.currentTarget;
+                                    el.style.height = "auto";
+                                    el.style.height = `${el.scrollHeight}px`;
+                                  }}
+                                  onFocus={() => {
+                                    if (blurTimeoutRef.current) {
+                                      clearTimeout(blurTimeoutRef.current);
+                                      blurTimeoutRef.current = null;
+                                    }
+                                    setDetailEditingIndex(index);
+                                  }}
+                                  onBlur={() => {
+                                    blurTimeoutRef.current = setTimeout(() => {
+                                      setDetailEditingIndex(null);
+                                    }, 150);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+
+                                      if (blurTimeoutRef.current) {
+                                        clearTimeout(blurTimeoutRef.current);
+                                        blurTimeoutRef.current = null;
+                                      }
+
+                                      const nextIndex = index + 1;
+                                      const hasNextTask =
+                                        nextIndex < selectedItemInputs.length &&
+                                        selectedItemInputs[nextIndex]?.trim().length > 0;
+
+                                      if (hasNextTask) {
+                                        setDetailEditingIndex(nextIndex);
+                                        setTimeout(() => {
+                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
+                                          if (areas[nextIndex]) {
+                                            areas[nextIndex].focus();
+                                          }
+                                        }, 0);
+                                      } else {
+                                        const currentLength = selectedItemInputs.length;
+                                        const newIndex = currentLength;
+
+                                        setItemInputs((prev) => {
+                                          const inputs = prev[selectedItemId!] || [""];
+                                          return { ...prev, [selectedItemId!]: [...inputs, ""] };
+                                        });
+
+                                        setDetailEditingIndex(newIndex);
+                                        setTimeout(() => {
+                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
+                                          if (areas[newIndex]) {
+                                            areas[newIndex].focus();
+                                          }
+                                        }, 50);
+                                      }
+                                    }
+                                  }}
+                                  style={{ height: "auto", minHeight: "20px" }}
+                                />
+                              </div>
+                            );
+                          }
+                          
+                          // 저장된 내용이 있을 때: 비어있고 편집 중이 아니면 숨김
+                          if (isEmpty && !isEditing) return null;
 
                           return (
                             <div
@@ -966,6 +1059,15 @@ export function Step4TaskSelection() {
                                 detailDraggingIndex === index ? "opacity-50" : "opacity-100"
                               }`}
                             >
+                              {!isEmpty && (
+                                <span 
+                                  className="text-[10px] text-[color:rgba(75,70,41,0.55)] cursor-move select-none"
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                  ⋮⋮
+                                </span>
+                              )}
+                              
                               <span
                                 className="h-1 w-1 rounded-full"
                                 style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
@@ -973,7 +1075,7 @@ export function Step4TaskSelection() {
 
                               {detailEditingIndex === index ? (
                                 <textarea
-                                  className="detail-input flex-1 rounded-lg border border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] shadow-[inset_0_-1px_0_rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-b)]/20 resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
+                                  className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
                                   rows={1}
                                   value={value}
                                   placeholder="입력하세요"
@@ -983,51 +1085,98 @@ export function Step4TaskSelection() {
                                     el.style.height = "auto";
                                     el.style.height = `${el.scrollHeight}px`;
                                   }}
-                                  onBlur={() => setDetailEditingIndex(null)}
+                                  onBlur={() => {
+                                    blurTimeoutRef.current = setTimeout(() => {
+                                      setDetailEditingIndex(null);
+                                    }, 150);
+                                  }}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey) {
                                       e.preventDefault();
-                                      setDetailEditingIndex(null);
+                                      
+                                      // blur 타이머 취소
+                                      if (blurTimeoutRef.current) {
+                                        clearTimeout(blurTimeoutRef.current);
+                                        blurTimeoutRef.current = null;
+                                      }
+                                      
+                                      const nextIndex = index + 1;
+                                      
+                                      // 다음 과제가 있는지 확인 (비어있지 않은 항목)
+                                      const hasNextTask = nextIndex < selectedItemInputs.length && 
+                                        selectedItemInputs[nextIndex]?.trim().length > 0;
+                                      
+                                      if (hasNextTask) {
+                                        // 다음 과제가 있으면 다음 과제 수정모드 활성화
+                                        setDetailEditingIndex(nextIndex);
+                                        setTimeout(() => {
+                                          if (blurTimeoutRef.current) {
+                                            clearTimeout(blurTimeoutRef.current);
+                                            blurTimeoutRef.current = null;
+                                          }
+                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
+                                          if (areas[nextIndex]) {
+                                            areas[nextIndex].focus();
+                                          }
+                                        }, 0);
+                                      } else {
+                                        // 다음 과제가 없으면 새 입력란 생성
+                                        const currentLength = selectedItemInputs.length;
+                                        const newIndex = currentLength;
+                                        
+                                        setItemInputs((prev) => {
+                                          const inputs = prev[selectedItemId!] || [""];
+                                          return { ...prev, [selectedItemId!]: [...inputs, ""] };
+                                        });
+                                        
+                                        // 상태 업데이트 후 인덱스 설정
+                                        setDetailEditingIndex(newIndex);
+                                        setTimeout(() => {
+                                          if (blurTimeoutRef.current) {
+                                            clearTimeout(blurTimeoutRef.current);
+                                            blurTimeoutRef.current = null;
+                                          }
+                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
+                                          if (areas[newIndex]) {
+                                            areas[newIndex].focus();
+                                          }
+                                        }, 50);
+                                      }
                                     }
                                   }}
-                                  style={{ height: "auto" }}
+                                  style={{ height: "auto", minHeight: "20px" }}
                                   autoFocus
                                 />
                               ) : (
-                                <div className="flex-1 border-b border-[color:rgba(75,70,41,0.2)] pb-1 text-left text-[13px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)]">
+                                <div 
+                                  className="flex-1 px-3 py-2 border-b border-[color:rgba(75,70,41,0.2)] text-left text-[13px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)] cursor-text" 
+                                  style={{ minHeight: "20px" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (blurTimeoutRef.current) {
+                                      clearTimeout(blurTimeoutRef.current);
+                                      blurTimeoutRef.current = null;
+                                    }
+                                    setDetailEditingIndex(index);
+                                  }}
+                                >
                                   {value}
                                 </div>
                               )}
 
-                              <div className="flex items-center gap-2">
-                                {detailEditingIndex !== index && !isEmpty && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setDetailEditingIndex(index)}
-                                    className="inline-flex h-4 w-4 items-center justify-center cursor-pointer"
-                                    aria-label="세부 실천과제 편집"
-                                  >
-                                    <img src="/icons/edit.svg" alt="" className="h-3 w-3 opacity-60" />
-                                  </button>
-                                )}
-
-                                {!isEmpty && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveInput(selectedItemId!, index)}
-                                    className="inline-flex h-4 w-4 items-center justify-center cursor-pointer text-[12px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
-                                    aria-label="세부 실천과제 삭제"
-                                  >
-                                    ×
-                                  </button>
-                                )}
-
-                                {!isEmpty && (
-                                  <span className="text-[10px] text-[color:rgba(75,70,41,0.55)] cursor-move select-none">
-                                    ⋮⋮
-                                  </span>
-                                )}
-                              </div>
+                              {!isEmpty && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveInput(selectedItemId!, index);
+                                  }}
+                                  className="inline-flex h-5 w-5 items-center justify-center cursor-pointer text-[14px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
+                                  aria-label="세부 실천과제 삭제"
+                                >
+                                  ×
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -1061,10 +1210,11 @@ export function Step4TaskSelection() {
         </div>
       </div>
 
-      {/* PDF 다운로드 버튼 */}
+      {/* PDF 다운로드 버튼 - 임시 비활성화
       <div className="flex justify-end">
         <DownloadPlanPdfButton payload={pdfPayload} />
       </div>
+      */}
     </div>
   );
 }
