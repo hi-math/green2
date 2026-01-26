@@ -912,102 +912,144 @@ export function Step4TaskSelection() {
                 </div>
 
                 <div className="space-y-2">
-                  {selectedItemInputs.map((value, index) => {
-                    const isEmpty = value.trim().length === 0;
-
-                    return (
-                      <div
-                        key={index}
-                        draggable={!isEmpty}
-                        onDragStart={isEmpty ? undefined : (e) => handleDetailDragStart(index, e)}
-                        onDragEnd={isEmpty ? undefined : handleDetailDragEnd}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={isEmpty ? undefined : () => handleDetailDrop(index)}
-                        className={`flex items-center gap-2 px-1 py-1 transition-opacity ${
-                          detailDraggingIndex === index ? "opacity-50" : "opacity-100"
-                        }`}
-                      >
-                        <span
-                          className="h-1 w-1 rounded-full"
-                          style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
-                        />
-
-                        {detailEditingIndex === index || isEmpty ? (
+                  {(() => {
+                    const hasNonEmptyInputs = selectedItemInputs.some((v) => v.trim().length > 0);
+                    
+                    // 기존 내용이 없을 때: 빈 입력창 하나만 표시
+                    if (!hasNonEmptyInputs) {
+                      return (
+                        <div className="flex items-center gap-2 px-1 py-1">
+                          <span
+                            className="h-1 w-1 rounded-full"
+                            style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
+                          />
                           <textarea
                             className="detail-input flex-1 rounded-lg border border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] shadow-[inset_0_-1px_0_rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-b)]/20 resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
                             rows={1}
-                            value={value}
+                            value={selectedItemInputs[0] || ""}
                             placeholder="입력하세요"
                             onChange={(e) => {
-                              setDetailEditingIndex(index);
-                              handleInputChange(selectedItemId!, index, e.target.value);
-
+                              handleInputChange(selectedItemId!, 0, e.target.value);
                               const el = e.currentTarget;
                               el.style.height = "auto";
                               el.style.height = `${el.scrollHeight}px`;
                             }}
-                            onFocus={() => setDetailEditingIndex(index)}
-                            onBlur={() => setDetailEditingIndex(null)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" && !e.shiftKey) {
                                 e.preventDefault();
-                                if (index === selectedItemInputs.length - 1) {
-                                  handleAddInput(selectedItemId!);
-                                  setTimeout(() => {
-                                    const areas =
-                                      document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
-                                    if (areas.length > 0) {
-                                      const last = areas[areas.length - 1];
-                                      last.style.height = "auto";
-                                      last.style.height = `${last.scrollHeight}px`;
-                                      last.focus();
-                                    }
-                                  }, 0);
-                                }
-                                setDetailEditingIndex(null);
+                                (e.target as HTMLTextAreaElement).blur();
                               }
                             }}
                             style={{ height: "auto" }}
-                            autoFocus={index === 0 && selectedItemInputs.length === 1}
+                            autoFocus
                           />
-                        ) : (
-                          <div className="flex-1 border-b border-[color:rgba(75,70,41,0.2)] pb-1 text-left text-[13px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)]">
-                            {value}
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-2">
-                          {detailEditingIndex !== index && value.trim().length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setDetailEditingIndex(index)}
-                              className="inline-flex h-4 w-4 items-center justify-center cursor-pointer"
-                              aria-label="세부 실천과제 편집"
-                            >
-                              <img src="/icons/edit.svg" alt="" className="h-3 w-3 opacity-60" />
-                            </button>
-                          )}
-
-                          {value.trim().length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveInput(selectedItemId!, index)}
-                              className="inline-flex h-4 w-4 items-center justify-center cursor-pointer text-[12px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
-                              aria-label="세부 실천과제 삭제"
-                            >
-                              ×
-                            </button>
-                          )}
-
-                          {!isEmpty && (
-                            <span className="text-[10px] text-[color:rgba(75,70,41,0.55)] cursor-move select-none">
-                              ⋮⋮
-                            </span>
-                          )}
                         </div>
-                      </div>
+                      );
+                    }
+                    
+                    // 기존 내용이 있을 때: 내용만 표시 + 추가 버튼
+                    return (
+                      <>
+                        {selectedItemInputs.map((value, index) => {
+                          const isEmpty = value.trim().length === 0;
+                          if (isEmpty && detailEditingIndex !== index) return null;
+
+                          return (
+                            <div
+                              key={index}
+                              draggable={!isEmpty}
+                              onDragStart={isEmpty ? undefined : (e) => handleDetailDragStart(index, e)}
+                              onDragEnd={isEmpty ? undefined : handleDetailDragEnd}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={isEmpty ? undefined : () => handleDetailDrop(index)}
+                              className={`flex items-center gap-2 px-1 py-1 transition-opacity ${
+                                detailDraggingIndex === index ? "opacity-50" : "opacity-100"
+                              }`}
+                            >
+                              <span
+                                className="h-1 w-1 rounded-full"
+                                style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
+                              />
+
+                              {detailEditingIndex === index ? (
+                                <textarea
+                                  className="detail-input flex-1 rounded-lg border border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] shadow-[inset_0_-1px_0_rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-b)]/20 resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
+                                  rows={1}
+                                  value={value}
+                                  placeholder="입력하세요"
+                                  onChange={(e) => {
+                                    handleInputChange(selectedItemId!, index, e.target.value);
+                                    const el = e.currentTarget;
+                                    el.style.height = "auto";
+                                    el.style.height = `${el.scrollHeight}px`;
+                                  }}
+                                  onBlur={() => setDetailEditingIndex(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+                                      setDetailEditingIndex(null);
+                                    }
+                                  }}
+                                  style={{ height: "auto" }}
+                                  autoFocus
+                                />
+                              ) : (
+                                <div className="flex-1 border-b border-[color:rgba(75,70,41,0.2)] pb-1 text-left text-[13px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)]">
+                                  {value}
+                                </div>
+                              )}
+
+                              <div className="flex items-center gap-2">
+                                {detailEditingIndex !== index && !isEmpty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDetailEditingIndex(index)}
+                                    className="inline-flex h-4 w-4 items-center justify-center cursor-pointer"
+                                    aria-label="세부 실천과제 편집"
+                                  >
+                                    <img src="/icons/edit.svg" alt="" className="h-3 w-3 opacity-60" />
+                                  </button>
+                                )}
+
+                                {!isEmpty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveInput(selectedItemId!, index)}
+                                    className="inline-flex h-4 w-4 items-center justify-center cursor-pointer text-[12px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
+                                    aria-label="세부 실천과제 삭제"
+                                  >
+                                    ×
+                                  </button>
+                                )}
+
+                                {!isEmpty && (
+                                  <span className="text-[10px] text-[color:rgba(75,70,41,0.55)] cursor-move select-none">
+                                    ⋮⋮
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        
+                        {/* 입력창 추가 버튼 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleAddInput(selectedItemId!);
+                            setTimeout(() => {
+                              const newIndex = selectedItemInputs.length;
+                              setDetailEditingIndex(newIndex);
+                            }, 0);
+                          }}
+                          className="flex items-center gap-1.5 px-1 py-1 text-[11px] font-semibold text-[color:rgba(75,70,41,0.7)] hover:text-[var(--brand-b)] cursor-pointer transition-colors"
+                        >
+                          <img src="/icons/add.svg" alt="" className="h-3.5 w-3.5 opacity-70" />
+                          <span>과제 추가</span>
+                        </button>
+                      </>
                     );
-                  })}
+                  })()}
                 </div>
               </div>
             ) : (

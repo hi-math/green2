@@ -390,25 +390,23 @@ export async function POST(request: NextRequest) {
     const html = generateHTML(body as PlanData);
 
     // Chromium 실행 경로 설정
-    const executablePath = await chromium.executablePath();
-
     // 로컬 개발 환경에서는 시스템 Chrome 사용
     const isLocal = process.env.NODE_ENV === "development";
     
     const browser = await puppeteer.launch({
       args: isLocal ? [] : chromium.args,
-      defaultViewport: chromium.defaultViewport,
       executablePath: isLocal
         ? process.platform === "win32"
           ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
           : process.platform === "darwin"
           ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
           : "/usr/bin/google-chrome"
-        : executablePath,
-      headless: true,
+        : await chromium.executablePath(),
+      headless: isLocal ? true : chromium.headless,
     });
 
     const page = await browser.newPage();
+    await page.setViewport({ width: 794, height: 1123 }); // A4 @ 96dpi
     await page.setContent(html, { waitUntil: "networkidle0" });
 
     const pdfBuffer = await page.pdf({
