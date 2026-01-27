@@ -59,13 +59,12 @@ body {
 }
 
 /* Hide scrollbars but keep scrolling if needed (for inner containers) */
-.no-scrollbar::-webkit-scrollbar {
-  width: 0px;
-  height: 0px;
-}
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
 }
 
 /* (transform 기반으로 통일했으므로 zoom fallback 불필요) */

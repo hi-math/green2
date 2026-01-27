@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 
 const STEP1_STORAGE_KEY = "carbonapp.step1";
 const STEP4_STORAGE_KEY = "carbonapp.step4";
@@ -8,15 +8,11 @@ const STEP4_STORAGE_KEY = "carbonapp.step4";
 type Step1Snapshot = {
   basic?: {
     schoolName?: string;
-    studentCount?: string;
-    staffCount?: string;
-    schoolAreaM2?: string;
   };
   emissions?: {
     electricWon?: string;
     gasWon?: string;
     waterWon?: string;
-    solarAnnualKwh?: string;
   };
   yearUsed?: number | null;
 };
@@ -33,8 +29,6 @@ type Step4Snapshot = {
   itemInputs: Record<string, string[]>;
   reductionPercent: number;
 };
-
-const CATEGORY_ORDER = ["실천 행동의 일상화", "실천 문화 확산", "학교 환경 조성", "학교추가과제"];
 
 function loadStep1FromSession(): Step1Snapshot | null {
   if (typeof window === "undefined") return null;
@@ -66,25 +60,18 @@ function toNumLoose(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function groupByCategory(items: TaskItem[], order: string[]) {
-  const grouped: Record<string, TaskItem[]> = {};
-  items.forEach((item) => {
-    if (!grouped[item.category]) grouped[item.category] = [];
-    grouped[item.category].push(item);
-  });
-
-  return order
-    .filter((cat) => grouped[cat] && grouped[cat].length > 0)
-    .map((cat) => ({ category: cat, items: grouped[cat] }));
-}
-
+/**
+ * PDF Preview 페이지
+ * 
+ * 기존 세로 버전의 HTML/CSS 미리보기는 삭제되었습니다.
+ * 이제 PDF API를 호출하여 가로 빈 템플릿을 브라우저에서 직접 표시합니다.
+ */
 export default function PreviewPage() {
   const [schoolName, setSchoolName] = useState<string>("");
   const [emissions, setEmissions] = useState<{
     electric?: string;
     gas?: string;
     water?: string;
-    solar?: string;
   } | null>(null);
   const [energyYearUsed, setEnergyYearUsed] = useState<number | null>(null);
 
@@ -93,7 +80,10 @@ export default function PreviewPage() {
   const [itemInputs, setItemInputs] = useState<Record<string, string[]>>({});
   const [reductionPercent, setReductionPercent] = useState(10);
 
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+
 
   // Step1 데이터 로드
   useEffect(() => {
@@ -105,7 +95,6 @@ export default function PreviewPage() {
         electric: e.electricWon ?? "",
         gas: e.gasWon ?? "",
         water: e.waterWon ?? "",
-        solar: e.solarAnnualKwh ?? "",
       });
       setEnergyYearUsed(typeof snap?.yearUsed === "number" ? snap.yearUsed : null);
       setSchoolName(String(snap?.basic?.schoolName ?? "").trim());
@@ -130,274 +119,139 @@ export default function PreviewPage() {
     }
   }, []);
 
-  const fmt0 = useMemo(() => new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }), []);
+  // PDF Preview 자동 로드
+  useEffect(() => {
+    const loadPreview = async () => {
+      setIsLoading(true);
+      setError(null);
 
-  const usageValues = useMemo(() => {
-    const electricRaw = emissions?.electric ?? "";
-    const gasRaw = emissions?.gas ?? "";
-    const waterRaw = emissions?.water ?? "";
-    return {
-      electric: toNumLoose(electricRaw) ?? 0,
-      gas: toNumLoose(gasRaw) ?? 0,
-      water: toNumLoose(waterRaw) ?? 0,
-    };
-  }, [emissions]);
+      try {
+        const usageValues = {
+          electric: toNumLoose(emissions?.electric ?? "") ?? 0,
+          gas: toNumLoose(emissions?.gas ?? "") ?? 0,
+          water: toNumLoose(emissions?.water ?? "") ?? 0,
+        };
 
-  const baselineYear = typeof energyYearUsed === "number" ? energyYearUsed : new Date().getFullYear() - 1;
-  const nextYear = baselineYear + 1;
-  const reductionMultiplier = Math.max(0, (100 - reductionPercent) / 100);
+        const baselineYear = typeof energyYearUsed === "number" ? energyYearUsed : new Date().getFullYear() - 1;
+        const nextYear = baselineYear + 1;
 
-  const allTasks = useMemo(() => [...rightItems, ...extraTasks], [rightItems, extraTasks]);
-  const groupedTasks = useMemo(() => {
-    if (allTasks.length === 0) return [];
-    const grouped = groupByCategory(allTasks, CATEGORY_ORDER);
-    return grouped;
-  }, [allTasks]);
+        const allTasks = [...rightItems, ...extraTasks];
+        const categories = allTasks.reduce((acc, item) => {
+          const cat = item.category || "기타";
+          if (!acc[cat]) {
+            acc[cat] = { name: cat, items: [] };
+          }
+          acc[cat].items.push({
+            label: item.label,
+            details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
+          });
+          return acc;
+        }, {} as Record<string, { name: string; items: { label: string; details: string[] }[] }>);
 
-  // PDF 다운로드
-  const handleDownload = async () => {
-    setIsDownloading(true);
-    try {
-      const categories = groupedTasks.map((group) => ({
-        name: group.category,
-        items: group.items.map((item) => ({
-          label: item.label,
-          details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
-        })),
-      }));
+        const payload = {
+          schoolName: schoolName || "○○학교",
+          targetPct: reductionPercent,
+          baselineYear,
+          nextYear,
+          usageValues,
+          categories: Object.values(categories),
+        };
 
-      const payload = {
-        schoolName: schoolName || "○○학교",
-        targetPct: reductionPercent,
-        baselineYear,
-        nextYear,
-        usageValues,
-        categories,
-      };
+        // Preview 모드로 PDF API 호출 (preview=true)
+        const res = await fetch("/api/pdf/plan?preview=true", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      const res = await fetch("/api/pdf/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || `PDF 생성 실패 (${res.status})`);
+        }
 
-      if (!res.ok) {
-        throw new Error("PDF 생성 실패");
+        // Content-Type 확인
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/pdf")) {
+          const text = await res.text();
+          console.error("예상치 못한 응답:", text.substring(0, 200));
+          throw new Error(`PDF 형식이 아닙니다. (Content-Type: ${contentType})`);
+        }
+
+        // PDF Blob을 받아서 페이지 내에 표시
+        const blob = await res.blob();
+        
+        // Blob 크기 확인
+        if (blob.size === 0) {
+          throw new Error("PDF 파일이 비어있습니다.");
+        }
+        
+        // Blob이 실제로 PDF인지 확인
+        if (!blob.type.includes("pdf")) {
+          console.warn("Blob type:", blob.type);
+        }
+        
+        const url = URL.createObjectURL(blob);
+        setPdfUrl(url);
+      } catch (err) {
+        console.error("Preview error:", err);
+        setError(err instanceof Error ? err.message : "PDF 미리보기 중 오류가 발생했습니다.");
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `탄소중립_실천계획서_${schoolName || "학교"}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Download error:", error);
-      alert("PDF 다운로드 중 오류가 발생했습니다.");
-    } finally {
-      setIsDownloading(false);
+    // 데이터가 로드된 후 Preview 실행
+    if (schoolName !== undefined && emissions !== null) {
+      loadPreview();
     }
-  };
+
+    // 컴포넌트 언마운트 시 URL 정리
+    return () => {
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+      }
+    };
+  }, [schoolName, emissions, energyYearUsed, rightItems, extraTasks, itemInputs, reductionPercent]);
 
   return (
-    <div className="mx-auto max-w-[900px] px-4">
-      {/* PDF 다운로드 버튼 */}
-      <div className="mb-6 flex justify-end">
-        <button
-          type="button"
-          className="inline-flex h-11 items-center justify-center rounded-lg bg-[var(--brand-b)] px-6 text-sm font-bold text-white shadow-sm hover:brightness-110 hover:shadow-md transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleDownload}
-          disabled={isDownloading}
-        >
-          {isDownloading ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              생성 중...
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              PDF 다운로드
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* A4 문서 미리보기 */}
-      <div 
-        className="bg-white rounded-lg shadow-lg border border-slate-200 p-10 mx-auto mb-6" 
-        style={{ 
-          maxWidth: "210mm", 
-          minHeight: "297mm",
-          fontFamily: '"NanumGothic", "Nanum Gothic", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", system-ui, sans-serif'
-        }}
-      >
-        {/* 제목 */}
-        <h1 className="text-center text-2xl font-bold text-slate-800 mb-6" style={{ fontFamily: '"NanumGothic", "Nanum Gothic", sans-serif' }}>
-          우리학교 탄소중립 실천 계획서
-        </h1>
-
-        {/* 기본 정보 */}
-        <div className="flex justify-between items-center bg-slate-50 rounded-lg p-4 mb-6 border border-slate-200">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-[#4B4629]">학교명:</span>
-            <span className="text-sm font-bold text-slate-800">{schoolName || "○○학교"}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-[#4B4629]">감축 목표:</span>
-            <span className="text-sm font-bold text-slate-800">{reductionPercent}%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-[#4B4629]">기준연도:</span>
-            <span className="text-sm font-bold text-slate-800">{baselineYear}년</span>
-          </div>
+    <div className="w-full max-w-[1200px] mx-auto px-4 h-full">
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <svg className="animate-spin h-8 w-8 text-[var(--brand-b)]" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-sm font-semibold text-[var(--brand-b)]">PDF 미리보기 생성 중...</p>
         </div>
-
-        {/* 감축 목표 차트 영역 */}
-        <div className="border border-slate-200 rounded-lg p-5 mb-6 bg-slate-50">
-          <h3 className="text-sm font-bold text-[#4B4629] mb-4" style={{ fontFamily: '"NanumGothic", "Nanum Gothic", sans-serif' }}>탄소배출 감축 목표</h3>
-          <div className="grid grid-cols-3 gap-6">
-            {[
-              { label: "전기", unit: "kWh", value: usageValues.electric, baseColor: "#6B4423", targetColor: "#9A7050" },
-              { label: "가스", unit: "m³", value: usageValues.gas, baseColor: "#C97D60", targetColor: "#E0A893" },
-              { label: "물", unit: "m³", value: usageValues.water, baseColor: "#7A9E6B", targetColor: "#A8C09A" },
-            ].map((item) => (
-              <div key={item.label} className="text-center">
-                <div className="text-xs font-semibold text-[#4B4629] mb-3">{item.label} ({item.unit})</div>
-                <div className="flex justify-center items-end gap-3 h-20 mb-2">
-                  <div className="flex flex-col items-center">
-                    <div
-                      className="w-8 rounded-t text-[9px] font-bold text-white flex items-start justify-center pt-1"
-                      style={{ backgroundColor: item.baseColor, height: "70px" }}
-                    >
-                      {fmt0.format(Math.round(item.value))}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <div
-                      className="w-8 rounded-t text-[9px] font-bold text-white flex items-start justify-center pt-1"
-                      style={{ backgroundColor: item.targetColor, height: `${70 * reductionMultiplier}px`, minHeight: "20px" }}
-                    >
-                      {fmt0.format(Math.round(item.value * reductionMultiplier))}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-center gap-5 text-[10px] font-semibold text-slate-500">
-                  <span>{baselineYear}</span>
-                  <span>{nextYear}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <p className="text-sm font-semibold text-red-600">{error}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 rounded-lg bg-[var(--brand-b)] text-white text-sm font-semibold hover:brightness-110"
+          >
+            다시 시도
+          </button>
         </div>
-
-        {/* 실천과제 섹션 */}
-        <div className="mb-4">
-          <h3 className="text-sm font-bold text-[#4B4629] pb-2 border-b-2 border-[#4B4629] mb-4" style={{ fontFamily: '"NanumGothic", "Nanum Gothic", sans-serif' }}>
-            우리학교 실천과제
-          </h3>
-
-          <div className="grid grid-cols-3 gap-3">
-            {allTasks.length > 0 ? (
-              (() => {
-                // 카테고리별로 그룹화
-                const categoryMap: Record<string, { category: string; items: TaskItem[] }> = {};
-                
-                allTasks.forEach((item) => {
-                  const cat = item.category || "기타";
-                  if (!categoryMap[cat]) {
-                    categoryMap[cat] = { category: cat, items: [] };
-                  }
-                  categoryMap[cat].items.push(item);
-                });
-
-                // 기본 3개 카테고리 + 학교추가과제
-                const displayCategories = [
-                  "실천 행동의 일상화",
-                  "실천 문화 확산",
-                  "학교 환경 조성",
-                  "학교추가과제",
-                ];
-
-                return displayCategories.map((cat) => {
-                  const group = categoryMap[cat];
-                  if (group && group.items.length > 0) {
-                    return (
-                      <div key={cat} className="border border-slate-200 rounded-lg p-3 bg-white">
-                        <div className="text-center text-xs font-bold text-[#4B4629] pb-2 mb-3 border-b border-slate-100" style={{ fontFamily: '"NanumGothic", "Nanum Gothic", sans-serif' }}>
-                          {cat}
-                        </div>
-                        <div className="space-y-3">
-                          {group.items.map((item, idx) => {
-                            const details = (itemInputs[item.id] || []).filter((d) => d.trim().length > 0);
-                            return (
-                              <div key={item.id}>
-                                <div className="flex items-start gap-1.5 text-[11px] font-semibold text-slate-700">
-                                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#4B4629] text-white text-[9px] font-bold shrink-0">
-                                    {idx + 1}
-                                  </span>
-                                  <span className="leading-tight">{item.label}</span>
-                                </div>
-                                {details.length > 0 && (
-                                  <ul className="ml-5 mt-1 space-y-0.5">
-                                    {details.map((d, dIdx) => (
-                                      <li key={dIdx} className="text-[10px] text-slate-500 flex items-start gap-1">
-                                        <span className="text-slate-400">–</span>
-                                        <span>{d}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div key={cat} className="border border-slate-200 rounded-lg p-3 bg-white">
-                        <div className="text-center text-xs font-bold text-[#4B4629] pb-2 mb-3 border-b border-slate-100" style={{ fontFamily: '"NanumGothic", "Nanum Gothic", sans-serif' }}>
-                          {cat}
-                        </div>
-                        <div className="text-center text-[11px] text-slate-400 py-6">
-                          선택된 과제가 없습니다
-                        </div>
-                      </div>
-                    );
-                  }
-                });
-              })()
-            ) : (
-              <>
-                {["실천 행동의 일상화", "실천 문화 확산", "학교 환경 조성"].map((cat) => (
-                  <div key={cat} className="border border-slate-200 rounded-lg p-3 bg-white">
-                    <div className="text-center text-xs font-bold text-[#4B4629] pb-2 mb-3 border-b border-slate-100" style={{ fontFamily: '"NanumGothic", "Nanum Gothic", sans-serif' }}>
-                      {cat}
-                    </div>
-                    <div className="text-center text-[11px] text-slate-400 py-6">
-                      선택된 과제가 없습니다
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
+      ) : pdfUrl ? (
+        <div className="w-full flex flex-col items-center h-full">
+          {/* PDF iframe: 반응형 높이 설정 */}
+          <iframe
+            src={pdfUrl}
+            className="border border-slate-200 rounded-lg shadow-sm bg-white"
+            style={{
+              width: "90%",
+              height: "60%", // 부모 컨테이너 높이의 60%
+            }}
+            title="PDF 미리보기"
+            onError={(e) => {
+              console.error("PDF iframe 로드 오류:", e);
+              setError("PDF를 로드할 수 없습니다.");
+            }}
+          />
         </div>
-
-        {/* 푸터 */}
-        <div className="text-center text-[10px] text-slate-400 mt-6">
-          ※ 본 계획서는 탄소중립 실천을 위한 학교 자체 계획서입니다.
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }
