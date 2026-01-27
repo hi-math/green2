@@ -170,6 +170,20 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       deviceScaleFactor,
     });
 
+    // 디버깅: 네비게이션 이벤트 로깅
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    page.on("framenavigated", (frame: any) => {
+      console.log("NAV:", frame.url());
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    page.on("console", (msg: any) => {
+      console.log("PAGE LOG:", msg.text());
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    page.on("pageerror", (err: any) => {
+      console.log("PAGE ERROR:", err.message);
+    });
+
     // 렌더링할 URL 생성
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL
@@ -192,71 +206,48 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     // 페이지 로드
     await page.goto(renderUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 20000,
+      timeout: 15000,
     });
 
-    // 디버깅: 현재 페이지 상태 확인
-    console.log("goto done:", page.url());
-    const html = await page.content();
-    console.log("page html head:", html.slice(0, 500));
+    // 디버깅: goto 직후 URL 확인
+    console.log("goto done url:", page.url());
 
     // 캡처 대상 요소가 준비될 때까지 대기
+    await page.waitForSelector("#capture-root", { visible: true, timeout: 10000 });
+
+    // 캡처 준비 완료 플래그 대기 (플래그가 없거나 false인 경우 대기)
+    // 플래그가 없어도 일정 시간 후 자동 진행
     try {
-      await page.waitForSelector("#capture-root", { timeout: 10000 });
+      await page.waitForFunction(
+        () => {
+          const ready = (window as any).__CAPTURE_READY__;
+          return ready === true;
+        },
+        { timeout: 5000, polling: 100 } // 타임아웃을 5초로 단축
+      );
+      console.log("__CAPTURE_READY__ 플래그 확인 완료");
     } catch (error) {
-      // waitForSelector 실패 시 상세 로그
-      console.log("FAILED URL:", page.url());
-      console.log("TITLE:", await page.title());
-      const bodyContent = await page.content();
-      console.log("BODY snippet:", bodyContent.slice(0, 2000));
-      try {
-        await page.screenshot({ path: "/tmp/debug.png", fullPage: true });
-        console.log("Debug screenshot saved to /tmp/debug.png");
-      } catch (screenshotError) {
-        console.error("Failed to save debug screenshot:", screenshotError);
-      }
-      throw error;
+      // 플래그가 설정되지 않았어도 계속 진행 (fallback)
+      console.warn("__CAPTURE_READY__ 플래그 대기 실패, 계속 진행:", error);
+      // 플래그 상태 확인
+      const flagStatus = await page.evaluate(() => {
+        return {
+          exists: typeof (window as any).__CAPTURE_READY__ !== 'undefined',
+          value: (window as any).__CAPTURE_READY__,
+        };
+      });
+      console.log("플래그 상태:", flagStatus);
+      
+      // 플래그가 없어도 추가 안전 대기 후 진행
+      console.log("플래그 없이 추가 안전 대기 (500ms) 후 진행");
+      await new Promise((r) => setTimeout(r, 500));
     }
 
-    // 폰트 로딩 완료 대기 (렌더링 완료 보장)
-    await page.evaluate(() => {
-      return (document as any).fonts?.ready || Promise.resolve();
-    });
+    // 짧은 안전 대기
+    await new Promise((r) => setTimeout(r, 100));
 
-    // 차트 렌더링 완료 대기 (ApexCharts 애니메이션 완료)
-    await page.evaluate(() => {
-      return new Promise<void>((resolve) => {
-        // ApexCharts가 렌더링 완료될 때까지 대기
-        const checkCharts = () => {
-          const charts = document.querySelectorAll('.apexcharts-canvas');
-          if (charts.length > 0) {
-            // 모든 차트가 렌더링되었는지 확인
-            let allReady = true;
-            charts.forEach((chart) => {
-              const svg = chart.querySelector('svg');
-              if (!svg || svg.children.length === 0) {
-                allReady = false;
-              }
-            });
-            if (allReady) {
-              resolve();
-            } else {
-              setTimeout(checkCharts, 50);
-            }
-          } else {
-            // 차트가 없으면 바로 완료
-            resolve();
-          }
-        };
-        // 초기 대기 후 확인 시작
-        setTimeout(checkCharts, 100);
-        // 최대 3초 대기 (타임아웃)
-        setTimeout(() => resolve(), 3000);
-      });
-    });
-
-    // 추가 안전 대기 (레이아웃 안정화 및 애니메이션 완료)
-    await new Promise((r) => setTimeout(r, 500));
+    // 디버깅: 캡처 직전 URL 확인
+    console.log("before screenshot url:", page.url());
 
     // 캡처된 요소의 실제 크기 가져오기 (스크린샷 전에)
     const elementSize = await page.evaluate(() => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 import { SemiShareGauge } from "../../../components/Step3Overview";
@@ -35,12 +35,71 @@ function toNumLoose(value: unknown): number | null {
 function CardsContent() {
   const searchParams = useSearchParams();
   const dataParam = searchParams.get("data");
+  const isScreenshot = searchParams.get("screenshot") === "1";
+
+  // screenshot=1일 때 모든 네비게이션 방지
+  useEffect(() => {
+    if (!isScreenshot) return;
+
+    // 네비게이션 방지
+    const preventNavigation = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+
+    // router, window.location, history 접근 차단
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", preventNavigation);
+      
+      // window.location, history 객체 래핑 (가능한 범위 내에서)
+      const originalPushState = history.pushState;
+      const originalReplaceState = history.replaceState;
+      const originalGo = history.go;
+      const originalBack = history.back;
+      const originalForward = history.forward;
+      
+      const blockNavigation = () => {
+        console.warn("[PDF/CARDS] Navigation blocked in screenshot mode");
+      };
+      
+      history.pushState = function(...args) {
+        blockNavigation();
+        return;
+      };
+      
+      history.replaceState = function(...args) {
+        blockNavigation();
+        return;
+      };
+
+      history.go = blockNavigation;
+      history.back = blockNavigation;
+      history.forward = blockNavigation;
+
+      // window.location은 재정의할 수 없으므로 제거 (에러 발생 방지)
+      // 대신 window.location.href 직접 할당을 감지하는 방법은 제한적이므로
+      // history API만 차단하는 것으로 충분
+
+      return () => {
+        window.removeEventListener("beforeunload", preventNavigation);
+        history.pushState = originalPushState;
+        history.replaceState = originalReplaceState;
+        history.go = originalGo;
+        history.back = originalBack;
+        history.forward = originalForward;
+      };
+    }
+  }, [isScreenshot]);
 
   let data: CardsData | null = null;
   let parseError: Error | null = null;
+  let dataMissing = false;
+  
   try {
     if (dataParam) {
       data = JSON.parse(decodeURIComponent(dataParam));
+    } else {
+      dataMissing = true;
     }
   } catch (error) {
     data = null;
@@ -176,6 +235,43 @@ function CardsContent() {
     tooltip: { enabled: false },
   });
 
+  // 캡처 준비 완료 플래그 설정 (즉시 초기화)
+  // 클라이언트 사이드에서만 실행되도록 보장
+  useEffect(() => {
+    // 초기값을 false로 설정 (즉시 실행)
+    if (typeof window === "undefined") return;
+    
+    (window as any).__CAPTURE_READY__ = false;
+    console.log("[PDF/CARDS] __CAPTURE_READY__ initialized to false");
+    
+    const done = async () => {
+      try {
+        // 폰트 로딩 완료까지 기다림 (지원 안되면 즉시 통과)
+        const fontsReady = (document as any).fonts?.ready;
+        if (fontsReady && typeof fontsReady.then === 'function') {
+          // 타임아웃 설정 (최대 3초)
+          await Promise.race([
+            fontsReady,
+            new Promise((resolve) => setTimeout(resolve, 3000))
+          ]);
+        } else {
+          // fonts.ready가 없으면 짧은 대기 후 진행
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        // 폰트 로딩 실패해도 계속 진행
+        console.warn("[PDF/CARDS] Font loading check failed:", error);
+      } finally {
+        // 항상 플래그를 true로 설정
+        (window as any).__CAPTURE_READY__ = true;
+        console.log("[PDF/CARDS] __CAPTURE_READY__ set to true");
+      }
+    };
+    
+    // 즉시 실행 (비동기)
+    done();
+  }, []);
+
   return (
     <>
       {/* 스크린샷용: 모든 애니메이션 비활성화 */}
@@ -190,7 +286,12 @@ function CardsContent() {
         `
       }} />
       <div id="capture-root" className="mx-auto" style={{ fontFamily: 'var(--font-brand), var(--font-noto-sans-kr), "Noto Sans KR", "Nanum Gothic", var(--font-geist-sans), Arial, Helvetica, sans-serif', width: '1200px', maxWidth: '1200px', backgroundColor: 'white' }}>
-      {parseError ? (
+      {dataMissing ? (
+        <div style={{ padding: '20px', textAlign: 'center', color: '#d32f2f' }}>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>데이터 없음</div>
+          <div style={{ fontSize: '12px' }}>data 파라미터가 제공되지 않았습니다.</div>
+        </div>
+      ) : parseError ? (
         <div style={{ padding: '20px', textAlign: 'center', color: '#d32f2f' }}>
           <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>데이터 파싱 실패</div>
           <div style={{ fontSize: '12px' }}>오류: {String(parseError.message)}</div>
