@@ -49,6 +49,15 @@ const getCategoryColor = (category: string) => {
   return "bg-[color:rgba(75,70,41,0.12)]";
 };
 
+const getCategoryHeaderColor = (category: string) => {
+  if (category === "실천 행동의 일상화") return "bg-[color:rgba(107,68,35,0.2)] group-hover:bg-[color:rgba(107,68,35,0.3)]";
+  if (category === "실천 문화 확산") return "bg-[color:rgba(201,125,96,0.2)] group-hover:bg-[color:rgba(201,125,96,0.3)]";
+  if (category === "학교 환경 조성") return "bg-[color:rgba(168,192,154,0.2)] group-hover:bg-[color:rgba(168,192,154,0.3)]";
+  if (category === EXTRA_CATEGORY) return "bg-[color:rgba(105,90,170,0.25)] group-hover:bg-[color:rgba(105,90,170,0.35)]";
+  if (category === "새 과제") return "bg-[color:rgba(135,206,235,0.25)] group-hover:bg-[color:rgba(135,206,235,0.35)]"; // 하늘색
+  return "bg-[color:rgba(75,70,41,0.15)] group-hover:bg-[color:rgba(75,70,41,0.25)]";
+};
+
 const getCategoryBorderColor = (category: string) => {
   if (category === "실천 행동의 일상화")
     return "border-[color:rgba(107,68,35,0.15)] hover:border-[color:rgba(107,68,35,0.4)]";
@@ -178,6 +187,8 @@ export function Step4TaskSelection() {
 
   const [extraTaskInput, setExtraTaskInput] = useState("");
   const [extraTasks, setExtraTasks] = useState<TaskItem[]>([]);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [isAddingNewTask, setIsAddingNewTask] = useState(false);
 
   const [emissions, setEmissions] = useState<{
     electric?: string;
@@ -581,6 +592,35 @@ export function Step4TaskSelection() {
     if (selectedItemId === taskId) setSelectedItemId(null);
   };
 
+  const handleAddNewTask = () => {
+    setIsAddingNewTask(true);
+    setNewTaskTitle("");
+  };
+
+  const handleSaveNewTask = () => {
+    const trimmed = newTaskTitle.trim();
+    if (!trimmed) {
+      setIsAddingNewTask(false);
+      return;
+    }
+
+    const newTask: TaskItem = {
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      label: trimmed,
+      category: "새 과제",
+    };
+
+    setExtraTasks((prev) => [newTask, ...prev]);
+    setItemInputs((prev) => ({ ...prev, [newTask.id]: [""] }));
+    setIsAddingNewTask(false);
+    setNewTaskTitle("");
+  };
+
+  const handleCancelNewTask = () => {
+    setIsAddingNewTask(false);
+    setNewTaskTitle("");
+  };
+
   // 세부 실천과제 reorder
   const handleDetailDragStart = (index: number, e?: React.DragEvent) => {
     detailDragIndexRef.current = index;
@@ -905,23 +945,75 @@ export function Step4TaskSelection() {
 
         <div className="flex-1 overflow-x-auto px-4 pb-4">
           {rightItems.length === 0 && extraTasks.length === 0 ? (
-            <div className="text-xs text-[color:rgba(75,70,41,0.5)] text-center py-12 border-2 border-dashed border-slate-200 rounded-lg">
-              추천과제를 드래그하여 여기에 놓으세요.
+            <div className="flex gap-2">
+              {/* 빈 상태 영역 - 폭 축소 */}
+              <div className="flex-shrink-0 text-xs text-[color:rgba(75,70,41,0.5)] text-center py-12 border-2 border-dashed border-slate-200 rounded-lg" style={{ width: '400px' }}>
+                추천과제를 드래그하여 여기에 놓으세요.
+              </div>
+              
+              {/* 새 카드 입력 인터페이스 (항상 맨 오른쪽) */}
+              {isAddingNewTask && (
+                <div className="flex-shrink-0 w-[220px] relative">
+                  <div className="group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col">
+                    {/* Header 영역 */}
+                    <div className="bg-[color:rgba(135,206,235,0.25)] group-hover:bg-[color:rgba(135,206,235,0.35)] h-10 px-3 flex items-center justify-between relative transition-colors">
+                      {/* 타이틀 입력 */}
+                      <input
+                        type="text"
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSaveNewTask();
+                          } else if (e.key === "Escape") {
+                            handleCancelNewTask();
+                          }
+                        }}
+                        onBlur={handleSaveNewTask}
+                        placeholder="과제명 입력"
+                        className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight flex-1 bg-transparent border-0 outline-none placeholder:text-[color:rgba(75,70,41,0.5)]"
+                        autoFocus
+                      />
+                    </div>
+                    
+                    {/* Header와 Body 사이 divider */}
+                    <div className="h-px bg-slate-200"></div>
+                    
+                    {/* Body 영역 */}
+                    <div className="bg-white px-3 pt-1 pb-3 flex-1">
+                      {/* 세부 실천과제 라벨 */}
+                      <div className="mb-1">
+                        <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
+                          세부 실천과제
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* 새 카드 추가 버튼 (입력 인터페이스가 없을 때만 표시) */}
+              {!isAddingNewTask && (
+                <div className="flex-shrink-0 w-[220px] flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={handleAddNewTask}
+                    className="w-full h-[160px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-100/50 hover:border-slate-400 transition-colors flex items-center justify-center"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                        <span className="text-2xl text-slate-500">+</span>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="min-w-full inline-block">
               {/* 카드 구조 */}
               <div className="flex gap-2">
-                {/* 왼쪽 라벨 영역 */}
-                <div className="flex-shrink-0 w-[100px] flex flex-col pt-3">
-                  <span className="text-[11px] font-semibold text-[color:rgba(75,70,41,0.85)] mb-8">
-                    실천 과제
-                  </span>
-                  <span className="text-[11px] font-semibold text-[color:rgba(75,70,41,0.85)]">
-                    세부 실천과제
-                  </span>
-                </div>
-                
                 {/* 카드들 */}
                 <div className="flex gap-2 flex-1">
                   {[...rightItems, ...extraTasks].map((item) => {
@@ -934,33 +1026,46 @@ export function Step4TaskSelection() {
                         className="flex-shrink-0 w-[220px] relative"
                       >
                         {/* 하나의 카드 */}
-                        <div className="rounded-xl border-2 border-slate-200 bg-white shadow-sm p-3 min-h-[160px]">
-                          {/* 삭제 버튼 - 오른쪽 위 */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (item.category === EXTRA_CATEGORY) {
-                                handleRemoveExtraTask(item.id);
-                              } else {
-                                handleRemoveFromRight(item.id, e);
-                              }
-                            }}
-                            className="absolute top-2 right-2 text-[14px] text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)] transition-colors z-10 cursor-pointer"
-                            aria-label="과제 삭제"
-                          >
-                            ×
-                          </button>
-                          
-                          {/* 과제 텍스트 */}
-                          <div className="mb-3 pb-2.5 border-b-2 border-slate-200">
-                            <span className={`text-[13px] font-extrabold ${getCategoryTextColor(item.category)} leading-tight`}>
+                        <div className="group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col">
+                          {/* Header 영역 */}
+                          <div className={`${getCategoryHeaderColor(item.category)} h-10 px-3 flex items-center justify-between relative transition-colors`}>
+                            {/* 제목 */}
+                            <span className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight flex-1">
                               {item.label}
                             </span>
+                            
+                            {/* 삭제 버튼 - 오른쪽 위 (호버 시에만 표시) */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (item.category === EXTRA_CATEGORY || item.category === "새 과제") {
+                                  handleRemoveExtraTask(item.id);
+                                } else {
+                                  handleRemoveFromRight(item.id, e);
+                                }
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity z-10 cursor-pointer ml-2"
+                              aria-label="과제 삭제"
+                            >
+                              <img src="/icons/remove.svg" alt="삭제" className="w-4 h-4" />
+                            </button>
                           </div>
                           
-                          {/* 세부 실천과제 입력창 */}
-                          <div className="space-y-1.5">
+                          {/* Header와 Body 사이 divider */}
+                          <div className="h-px bg-slate-200"></div>
+                          
+                          {/* Body 영역 */}
+                          <div className="bg-white px-3 pt-1 pb-3 flex-1">
+                            {/* 세부 실천과제 라벨 */}
+                            <div className="mb-1">
+                              <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
+                                세부 실천과제
+                              </span>
+                            </div>
+                            
+                            {/* 세부 실천과제 입력창 */}
+                            <div className="space-y-1.5">
                             {itemInputsForItem.map((value, index) => {
                               const isEmpty = value.trim().length === 0;
                               const isEditing = detailEditingIndex === index && selectedItemId === item.id;
@@ -1002,7 +1107,7 @@ export function Step4TaskSelection() {
                                   {isEditing || (!hasSavedContent && index === 0 && selectedItemId === item.id) ? (
                                     <textarea
                                       id={`detail-input-${item.id}-${index}`}
-                                      className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-1.5 py-1 text-[11px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
+                                      className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-1.5 py-0 text-[11px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-2 focus:border-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-[22px] whitespace-pre-wrap"
                                       rows={1}
                                       value={value}
                                       placeholder="입력하세요"
@@ -1010,16 +1115,23 @@ export function Step4TaskSelection() {
                                         handleInputChange(item.id, index, e.target.value);
                                         setDetailEditingIndex(index);
                                         const el = e.currentTarget;
-                                        el.style.height = "auto";
-                                        el.style.height = `${el.scrollHeight}px`;
+                                        // 기본 높이(BASE)를 먼저 강제하고, 그 이상만 늘어나게
+                                        const BASE = 22; // 보기/편집 공통 한 줄 높이
+                                        el.style.height = `${BASE}px`;
+                                        el.style.height = `${Math.max(BASE, el.scrollHeight)}px`;
                                       }}
-                                      onFocus={() => {
+                                      onFocus={(e) => {
                                         if (blurTimeoutRef.current) {
                                           clearTimeout(blurTimeoutRef.current);
                                           blurTimeoutRef.current = null;
                                         }
                                         setDetailEditingIndex(index);
                                         setSelectedItemId(item.id);
+                                        // 포커스 시 BASE 높이로 설정하여 underline 점프 방지
+                                        const el = e.currentTarget;
+                                        const BASE = 22;
+                                        el.style.height = `${BASE}px`;
+                                        el.style.height = `${Math.max(BASE, el.scrollHeight)}px`;
                                       }}
                                       onBlur={() => {
                                         blurTimeoutRef.current = setTimeout(() => {
@@ -1064,21 +1176,26 @@ export function Step4TaskSelection() {
                                           }
                                         }
                                       }}
-                                      style={{ height: "auto", minHeight: "18px" }}
+                                      style={{ minHeight: "22px", height: "22px" }}
                                       autoFocus={!hasSavedContent && index === 0 && selectedItemId === item.id}
                                     />
                                   ) : (
                                     <div 
-                                      className="flex-1 px-1.5 py-1 border-b border-[color:rgba(75,70,41,0.2)] text-left text-[11px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)] cursor-text" 
-                                      style={{ minHeight: "18px" }}
+                                      className="flex-1 px-1.5 py-0 border-b-2 border-[color:rgba(75,70,41,0.2)] text-left text-[11px] font-normal leading-[22px] text-[color:rgba(75,70,41,0.85)] cursor-text" 
+                                      style={{ minHeight: "22px", height: "22px" }}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (blurTimeoutRef.current) {
                                           clearTimeout(blurTimeoutRef.current);
                                           blurTimeoutRef.current = null;
                                         }
-                                        setDetailEditingIndex(index);
-                                        setSelectedItemId(item.id);
+                                        // 첫 번째 클릭: 텍스트 영역 선택
+                                        if (selectedItemId !== item.id) {
+                                          setSelectedItemId(item.id);
+                                        } else if (detailEditingIndex !== index) {
+                                          // 두 번째 클릭: 수정 모드 활성화
+                                          setDetailEditingIndex(index);
+                                        }
                                       }}
                                     >
                                       {value}
@@ -1130,11 +1247,71 @@ export function Step4TaskSelection() {
                               <img src="/icons/add.svg" alt="" className="h-2.5 w-2.5 opacity-70" />
                               <span>과제 추가</span>
                             </button>
+                            </div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
+                  
+                  {/* 새 카드 입력 인터페이스 (항상 맨 오른쪽) */}
+                  {isAddingNewTask && (
+                    <div className="flex-shrink-0 w-[220px] relative">
+                      <div className="group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col">
+                        {/* Header 영역 */}
+                        <div className="bg-[color:rgba(135,206,235,0.25)] group-hover:bg-[color:rgba(135,206,235,0.35)] h-10 px-3 flex items-center justify-between relative transition-colors">
+                          {/* 타이틀 입력 */}
+                          <input
+                            type="text"
+                            value={newTaskTitle}
+                            onChange={(e) => setNewTaskTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveNewTask();
+                              } else if (e.key === "Escape") {
+                                handleCancelNewTask();
+                              }
+                            }}
+                            onBlur={handleSaveNewTask}
+                            placeholder="과제명 입력"
+                            className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight flex-1 bg-transparent border-0 outline-none placeholder:text-[color:rgba(75,70,41,0.5)]"
+                            autoFocus
+                          />
+                        </div>
+                        
+                        {/* Header와 Body 사이 divider */}
+                        <div className="h-px bg-slate-200"></div>
+                        
+                        {/* Body 영역 */}
+                        <div className="bg-white px-3 pt-1 pb-3 flex-1">
+                          {/* 세부 실천과제 라벨 */}
+                          <div className="mb-1">
+                            <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
+                              세부 실천과제
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 새 카드 추가 버튼 (입력 인터페이스가 없을 때만 표시) */}
+                  {!isAddingNewTask && (
+                    <div className="flex-shrink-0 w-[220px] flex items-center justify-center">
+                      <button
+                        type="button"
+                        onClick={handleAddNewTask}
+                        className="w-full h-[160px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-100/50 hover:border-slate-400 transition-colors flex items-center justify-center"
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                            <span className="text-2xl text-slate-500">+</span>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
