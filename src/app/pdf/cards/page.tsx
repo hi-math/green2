@@ -1,3 +1,14 @@
+/**
+ * PDF 캡처 전용 페이지
+ * 
+ * ⚠️ 중요: 이 페이지는 절대 인증 가드/리다이렉트를 수행하지 않아야 합니다.
+ * - /pdf 경로는 (main) 그룹 밖에 있어 MainLayout의 인증 체크를 받지 않습니다.
+ * - screenshot=1 쿼리가 있을 때는 모든 네비게이션을 차단합니다.
+ * - data가 없어도 리다이렉트하지 않고 #capture-root만 렌더링합니다.
+ * 
+ * Vercel 보호(Password Protection/SSO)가 활성화되어 있으면 401이 발생할 수 있습니다.
+ * 이 경우 Vercel 프로젝트 설정에서 보호를 비활성화하거나 Production 배포 도메인을 사용하세요.
+ */
 "use client";
 
 import { useSearchParams } from "next/navigation";

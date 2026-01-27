@@ -210,7 +210,17 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     });
 
     // 디버깅: goto 직후 URL 확인
-    console.log("goto done url:", page.url());
+    const landed = page.url();
+    console.log("goto done url:", landed);
+
+    // Vercel 보호(401/SSO/Password)로 인한 로그인 페이지 리다이렉트 감지
+    if (landed.includes("vercel.com/login") || landed.includes("/login") && !landed.includes("/pdf/cards")) {
+      const errorMessage = `캡처 URL이 Vercel 보호(401/SSO/Password)에 걸려 로그인 페이지로 리다이렉트됩니다. 
+원인: ${renderUrl} → ${landed}
+해결: /pdf/cards는 공개 접근 가능해야 합니다. Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하거나, Production 배포(공개) 도메인에서 캡처하세요.`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
 
     // 캡처 대상 요소가 준비될 때까지 대기
     await page.waitForSelector("#capture-root", { visible: true, timeout: 10000 });
@@ -246,8 +256,18 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     // 짧은 안전 대기
     await new Promise((r) => setTimeout(r, 100));
 
-    // 디버깅: 캡처 직전 URL 확인
-    console.log("before screenshot url:", page.url());
+    // 디버깅: 캡처 직전 URL 확인 (리다이렉트 재확인)
+    const beforeScreenshotUrl = page.url();
+    console.log("before screenshot url:", beforeScreenshotUrl);
+    
+    // 캡처 직전에도 로그인 페이지로 리다이렉트되었는지 재확인
+    if (beforeScreenshotUrl.includes("vercel.com/login") || (beforeScreenshotUrl.includes("/login") && !beforeScreenshotUrl.includes("/pdf/cards"))) {
+      const errorMessage = `캡처 직전에 로그인 페이지로 리다이렉트되었습니다. 
+원인: ${renderUrl} → ${beforeScreenshotUrl}
+해결: /pdf/cards는 공개 접근 가능해야 합니다. Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하거나, Production 배포(공개) 도메인에서 캡처하세요.`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
 
     // 캡처된 요소의 실제 크기 가져오기 (스크린샷 전에)
     const elementSize = await page.evaluate(() => {
