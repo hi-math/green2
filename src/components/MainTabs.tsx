@@ -118,6 +118,9 @@ export function MainTabs({ showNext = false }: { showNext?: boolean }) {
           yearUsed={energyYearUsed}
           form={emissions}
           setForm={setEmissions}
+          setBasic={setBasic}
+          setEnergyYearUsed={setEnergyYearUsed}
+          setAutoPlaceholders={setAutoPlaceholders}
         />
       </div>
     </div>
@@ -368,12 +371,20 @@ function EmissionsForm({
   yearUsed,
   form,
   setForm,
+  setBasic,
+  setEnergyYearUsed,
+  setAutoPlaceholders,
 }: {
   showNext: boolean;
   basicForm: BasicFormState;
   yearUsed: number | null;
   form: EmissionsFormState;
   setForm: React.Dispatch<React.SetStateAction<EmissionsFormState>>;
+  setBasic: React.Dispatch<React.SetStateAction<BasicFormState>>;
+  setEnergyYearUsed: React.Dispatch<React.SetStateAction<number | null>>;
+  setAutoPlaceholders: React.Dispatch<
+    React.SetStateAction<{ classCount?: string; studentCount?: string; staffCount?: string; schoolAreaM2?: string }>
+  >;
 }) {
   const router = useRouter();
 
@@ -405,6 +416,34 @@ function EmissionsForm({
     gasInvalid ||
     waterInvalid ||
     solarInvalid;
+
+  function handleReset() {
+    // 모든 입력 필드 초기화
+    setBasic({
+      schoolName: "",
+      schoolLevel: "",
+      region: "",
+      office: "",
+      classCount: "",
+      studentCount: "",
+      classCountHint: undefined,
+      studentCountHint: undefined,
+      staffCount: "",
+      staffCountHint: undefined,
+      schoolAreaM2: "",
+      schoolAreaM2Hint: undefined,
+    });
+    setForm({
+      electricWon: "",
+      gasWon: "",
+      waterWon: "",
+      solarAnnualKwh: "",
+    });
+    setEnergyYearUsed(null);
+    setAutoPlaceholders({});
+    // sessionStorage도 초기화
+    sessionStorage.removeItem(STEP1_STORAGE_KEY);
+  }
 
   function validateAndNext() {
     const missing: string[] = [];
@@ -459,11 +498,20 @@ function EmissionsForm({
           </span>
           탄소 배출 관련 정보
         </div>
-        {yearUsed ? (
-          <div className="text-sm font-extrabold text-[color:rgba(75,70,41,0.7)]">
-            {yearUsed}년 기준
-          </div>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {yearUsed ? (
+            <div className="text-sm font-extrabold text-[color:rgba(75,70,41,0.7)]">
+              {yearUsed}년 기준
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleReset}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-[color:rgba(75,70,41,0.7)] hover:bg-slate-50 hover:border-slate-400 transition-colors"
+          >
+            데이터 초기화
+          </button>
+        </div>
       </div>
 
       <div className="space-y-4">

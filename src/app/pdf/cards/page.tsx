@@ -37,12 +37,14 @@ function CardsContent() {
   const dataParam = searchParams.get("data");
 
   let data: CardsData | null = null;
+  let parseError: Error | null = null;
   try {
     if (dataParam) {
       data = JSON.parse(decodeURIComponent(dataParam));
     }
-  } catch {
+  } catch (error) {
     data = null;
+    parseError = error instanceof Error ? error : new Error(String(error));
   }
 
   // 기본값
@@ -124,7 +126,7 @@ function CardsContent() {
       type: "bar",
       sparkline: { enabled: false },
       toolbar: { show: false },
-      animations: { enabled: true, speed: 700 },
+      animations: { enabled: false },
       offsetY: -8,
       parentHeightOffset: 0,
     },
@@ -175,9 +177,28 @@ function CardsContent() {
   });
 
   return (
-    <div id="capture-root" className="mx-auto" style={{ fontFamily: 'var(--font-brand), var(--font-noto-sans-kr), "Noto Sans KR", "Nanum Gothic", var(--font-geist-sans), Arial, Helvetica, sans-serif', width: '1200px', maxWidth: '1200px', backgroundColor: 'white' }}>
-      {/* 1층: 상단 그래프 영역 - 4페이지와 동일한 구조 */}
-      <div className="grid grid-cols-[1.4fr_1fr] items-stretch gap-6">
+    <>
+      {/* 스크린샷용: 모든 애니메이션 비활성화 */}
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          * {
+            animation: none !important;
+            transition: none !important;
+            animation-duration: 0s !important;
+            transition-duration: 0s !important;
+          }
+        `
+      }} />
+      <div id="capture-root" className="mx-auto" style={{ fontFamily: 'var(--font-brand), var(--font-noto-sans-kr), "Noto Sans KR", "Nanum Gothic", var(--font-geist-sans), Arial, Helvetica, sans-serif', width: '1200px', maxWidth: '1200px', backgroundColor: 'white' }}>
+      {parseError ? (
+        <div style={{ padding: '20px', textAlign: 'center', color: '#d32f2f' }}>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>데이터 파싱 실패</div>
+          <div style={{ fontSize: '12px' }}>오류: {String(parseError.message)}</div>
+        </div>
+      ) : (
+        <>
+          {/* 1층: 상단 그래프 영역 - 4페이지와 동일한 구조 */}
+          <div className="grid grid-cols-[1.4fr_1fr] items-stretch gap-6">
         {/* 좌측: 총 탄소배출량 그래프 - 4페이지와 동일 */}
         <div className="rounded-2xl border border-slate-200 bg-white/70 shadow-sm backdrop-blur h-full">
           <div className="px-6 pt-6 pb-6">
@@ -187,6 +208,7 @@ function CardsContent() {
                 totalText={totalText}
                 perPerson={null}
                 perM2={null}
+                disableAnimation={true}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-slate-200 bg-white/50 p-6 text-center text-sm font-extrabold text-[color:rgba(75,70,41,0.7)]">
@@ -242,7 +264,10 @@ function CardsContent() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
+    </>
   );
 }
 

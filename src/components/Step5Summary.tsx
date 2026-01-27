@@ -206,7 +206,7 @@ export function Step5Summary() {
           className="max-w-[320px] w-full h-auto"
         />
         <p className="mt-4 text-lg font-bold text-[var(--brand-b)] text-center">
-          학교 교육공동체가 함께하는 서울 학교 탄소중립 실천, 지금부터 시작합니다.
+          모든 학교에서의 탄소중립 실천, 지금부터 시작합니다.
         </p>
         
         {/* 버튼 영역 */}
@@ -214,26 +214,22 @@ export function Step5Summary() {
           {/* 미리보기 버튼 */}
           <button
             type="button"
-            className="inline-flex h-12 items-center justify-center rounded-lg border-2 border-[var(--brand-b)] bg-white px-6 text-base font-extrabold text-[var(--brand-b)] shadow-sm hover:bg-[var(--brand-b)]/5 hover:shadow-md transition-all duration-200 cursor-pointer"
+            className="inline-flex h-11 items-center justify-center rounded-lg border-2 border-[var(--brand-b)] bg-white px-5 text-sm font-semibold text-[var(--brand-b)] shadow-sm hover:bg-[var(--brand-b)]/5 hover:shadow-md transition-all duration-200 cursor-pointer whitespace-pre-line text-center"
             onClick={handlePreview}
           >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            실천 계획서 보기
+            우리학교 탄소중립{'\n'}실천 계획서 미리보기
           </button>
 
           {/* PDF 다운로드 버튼 */}
           <button
             type="button"
-            className="inline-flex h-12 items-center justify-center rounded-lg bg-[var(--brand-b)] px-6 text-base font-extrabold text-white shadow-sm hover:brightness-110 hover:shadow-md transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex h-11 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-semibold text-white shadow-sm hover:brightness-110 hover:shadow-md transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-pre-line text-center"
             onClick={handleDownload}
             disabled={isDownloading}
           >
             {isDownloading ? (
               <>
-                <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
@@ -241,12 +237,20 @@ export function Step5Summary() {
               </>
             ) : (
               <>
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                PDF 다운로드
+                우리학교 탄소중립{'\n'}실천 계획서 PDF 다운로드
               </>
             )}
+          </button>
+        </div>
+        
+        {/* 이전으로 버튼 */}
+        <div className="mt-6 flex items-center justify-center">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-[color:rgba(75,70,41,0.7)] shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
+            onClick={() => router.push("/4")}
+          >
+            이전으로
           </button>
         </div>
       </div>

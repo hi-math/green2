@@ -119,7 +119,7 @@ const ALL_ITEMS: TaskItem[] = [
   { id: "daily-08", label: "학교 차원 종이 인쇄물 사용 자제 약속", category: "실천 행동의 일상화" },
   { id: "daily-09", label: "쓰레기 분리배출 규칙 준수", category: "실천 행동의 일상화" },
 
-  { id: "culture-01", label: "탄소중립 학생 교육 프로그램\n실천 프로젝트 운영", category: "실천 문화 확산" },
+  { id: "culture-01", label: "탄소중립 학생 교육 프로그램,\n실천 프로젝트 운영", category: "실천 문화 확산" },
   { id: "culture-02", label: "학생 동아리 중심 탄소중립\n실천활동 정기적 운영", category: "실천 문화 확산" },
   { id: "culture-03", label: "교직원 탄소중립 연수 운영", category: "실천 문화 확산" },
   { id: "culture-04", label: "교직원 학습공동체 운영", category: "실천 문화 확산" },
@@ -130,7 +130,7 @@ const ALL_ITEMS: TaskItem[] = [
   { id: "culture-09", label: "교복 물려주기 상시 운영", category: "실천 문화 확산" },
   { id: "culture-10", label: "학생 주도 나눔 장터 운영", category: "실천 문화 확산" },
 
-  { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내공간 조성", category: "학교 환경 조성" },
+  { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내 공간 조성", category: "학교 환경 조성" },
   { id: "env-03", label: "냉 · 난방 효율 향상을 위한\n환경 개선 사업 추진", category: "학교 환경 조성" },
   { id: "env-05", label: "학교 숲·텃밭을 활용한 생물다양성 및\n탄소중립 교육 프로그램 운영", category: "학교 환경 조성" },
   { id: "env-07", label: "학교 텃밭 운영 및 조경수용\n빗물 저금통 설치 및 활용", category: "학교 환경 조성" },
@@ -1035,7 +1035,7 @@ export function Step4TaskSelection() {
     if (tasksWithoutDetails.length > 0) {
       setAlertModal({
         show: true,
-        message: "세부 실천과제가 입력되지 않은 과제가 있습니다.",
+        message: "세부 실천 계획이 입력되지 않은 과제가 있습니다.",
       });
       return;
     }
@@ -1208,7 +1208,7 @@ export function Step4TaskSelection() {
               </div>
               
               {/* 추천과제 드롭 영역 - 끝까지 확장 */}
-              <div className="flex-1 min-w-0 flex items-center justify-center text-xs text-[color:rgba(75,70,41,0.5)] py-12 border-2 border-dashed border-slate-200 rounded-lg">
+              <div className="flex-1 min-w-0 flex items-center justify-center text-sm text-[color:rgba(75,70,41,0.5)] py-12 border-2 border-dashed border-slate-200 rounded-lg">
                 추천과제를 드래그하여 여기에 놓으세요.
               </div>
             </div>
@@ -1333,14 +1333,14 @@ export function Step4TaskSelection() {
                           
                           {/* Body 영역 */}
                           <div className="bg-white px-3 pt-1 pb-3 flex-1">
-                            {/* 세부 실천과제 라벨 */}
+                            {/* 세부 실천 계획 라벨 */}
                             <div className="mb-1">
                               <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
-                                세부 실천과제
+                                세부 실천 계획
                               </span>
                             </div>
                             
-                            {/* 세부 실천과제 입력창 */}
+                            {/* 세부 실천 계획 입력창 */}
                             <div className="space-y-1.5">
                             {itemInputsForItem.map((value, index) => {
                               const isEmpty = value.trim().length === 0;
@@ -1437,7 +1437,7 @@ export function Step4TaskSelection() {
                                       }, 150);
                                     }}
                                     value={value}
-                                    placeholder={isEditing || isAutoFocus ? "입력하세요" : ""}
+                                    placeholder="입력하세요"
                                     onChange={(e) => {
                                       if (isEditing || isAutoFocus) {
                                         handleInputChange(item.id, index, e.target.value);
@@ -1535,7 +1535,7 @@ export function Step4TaskSelection() {
                                         ? "opacity-30 cursor-default pointer-events-none" 
                                         : "cursor-pointer text-[10px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
                                     }`}
-                                    aria-label="세부 실천과제 삭제"
+                                    aria-label="세부 실천 계획 삭제"
                                     disabled={isEmpty}
                                   >
                                     ×
@@ -1625,7 +1625,7 @@ export function Step4TaskSelection() {
                         <div className="bg-white px-3 pt-1 pb-3 flex-1">
                           <div className="mb-1">
                             <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
-                              세부 실천과제
+                              세부 실천 계획
                             </span>
                           </div>
                         </div>
@@ -1655,7 +1655,14 @@ export function Step4TaskSelection() {
       </div>
 
       {/* 다음으로 버튼 */}
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex items-center justify-end gap-3">
+        <button
+          type="button"
+          className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-[color:rgba(75,70,41,0.7)] shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
+          onClick={() => router.push("/3")}
+        >
+          이전으로
+        </button>
         <button
           type="button"
           className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
@@ -1664,6 +1671,9 @@ export function Step4TaskSelection() {
           다음으로
         </button>
       </div>
+
+      {/* 하단 여백(버튼 아래 답답함 해소) - 다른 레이아웃 건드리지 않음 */}
+      <div className="h-[clamp(14px,3.5vh,48px)] md:h-[clamp(12px,3vh,36px)]" aria-hidden="true" />
 
       {/* 알림 모달 */}
       {alertModal.show && (

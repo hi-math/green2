@@ -22,7 +22,7 @@ export default function LoginPage() {
         
         <p className="text-center text-sm text-[color:rgba(75,70,41,0.7)] mb-8">
           우리학교의 탄소중립 실천 현황을 확인하고<br />
-          실천 과제를 선정해보세요
+          실천 계획을 세워보세요
         </p>
 
         <button

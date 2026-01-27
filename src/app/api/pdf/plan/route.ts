@@ -171,9 +171,12 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     });
 
     // 렌더링할 URL 생성
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
-                    "http://localhost:3000";
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL
+        ? process.env.NEXT_PUBLIC_APP_URL
+        : process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000";
     
     const dataParam = encodeURIComponent(JSON.stringify({
       schoolName: payload.schoolName,
@@ -188,20 +191,72 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
 
     // 페이지 로드
     await page.goto(renderUrl, {
-      waitUntil: "networkidle0",
-      timeout: 15000,
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
     });
 
+    // 디버깅: 현재 페이지 상태 확인
+    console.log("goto done:", page.url());
+    const html = await page.content();
+    console.log("page html head:", html.slice(0, 500));
+
     // 캡처 대상 요소가 준비될 때까지 대기
-    await page.waitForSelector("#capture-root", { timeout: 10000 });
+    try {
+      await page.waitForSelector("#capture-root", { timeout: 10000 });
+    } catch (error) {
+      // waitForSelector 실패 시 상세 로그
+      console.log("FAILED URL:", page.url());
+      console.log("TITLE:", await page.title());
+      const bodyContent = await page.content();
+      console.log("BODY snippet:", bodyContent.slice(0, 2000));
+      try {
+        await page.screenshot({ path: "/tmp/debug.png", fullPage: true });
+        console.log("Debug screenshot saved to /tmp/debug.png");
+      } catch (screenshotError) {
+        console.error("Failed to save debug screenshot:", screenshotError);
+      }
+      throw error;
+    }
 
     // 폰트 로딩 완료 대기 (렌더링 완료 보장)
     await page.evaluate(() => {
       return (document as any).fonts?.ready || Promise.resolve();
     });
 
-    // 짧은 안전 대기 (레이아웃 안정화)
-    await new Promise((r) => setTimeout(r, 100));
+    // 차트 렌더링 완료 대기 (ApexCharts 애니메이션 완료)
+    await page.evaluate(() => {
+      return new Promise<void>((resolve) => {
+        // ApexCharts가 렌더링 완료될 때까지 대기
+        const checkCharts = () => {
+          const charts = document.querySelectorAll('.apexcharts-canvas');
+          if (charts.length > 0) {
+            // 모든 차트가 렌더링되었는지 확인
+            let allReady = true;
+            charts.forEach((chart) => {
+              const svg = chart.querySelector('svg');
+              if (!svg || svg.children.length === 0) {
+                allReady = false;
+              }
+            });
+            if (allReady) {
+              resolve();
+            } else {
+              setTimeout(checkCharts, 50);
+            }
+          } else {
+            // 차트가 없으면 바로 완료
+            resolve();
+          }
+        };
+        // 초기 대기 후 확인 시작
+        setTimeout(checkCharts, 100);
+        // 최대 3초 대기 (타임아웃)
+        setTimeout(() => resolve(), 3000);
+      });
+    });
+
+    // 추가 안전 대기 (레이아웃 안정화 및 애니메이션 완료)
+    await new Promise((r) => setTimeout(r, 500));
 
     // 캡처된 요소의 실제 크기 가져오기 (스크린샷 전에)
     const elementSize = await page.evaluate(() => {
@@ -404,19 +459,28 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       let maxDetailHeight = 0;
       const detailHeights: number[] = [];
       
-      group.forEach((item) => {
-        if (item.details.length > 0) {
-          // 리스트 표식(•)을 포함한 텍스트로 높이 계산
-          const detailsWithBullets = item.details.map(d => `• ${d}`).join("\n");
-          const lines = doc.splitTextToSize(detailsWithBullets, dataColumnWidth - leftPadding - cellPadding * 2);
-          const height = lines.length * lineHeight + 3; // 3mm만 더함 (기존 cellPadding * 2 = 10mm 대신)
-          detailHeights.push(height);
-          maxDetailHeight = Math.max(maxDetailHeight, height);
+      // 4개 셀 모두에 대해 높이 계산 (빈 셀 포함)
+      for (let idx = 0; idx < 4; idx++) {
+        if (idx < group.length) {
+          const item = group[idx];
+          if (item.details.length > 0) {
+            // 리스트 표식(•)을 포함한 텍스트로 높이 계산
+            const detailsWithBullets = item.details.map(d => `• ${d}`).join("\n");
+            const lines = doc.splitTextToSize(detailsWithBullets, dataColumnWidth - leftPadding - cellPadding * 2);
+            const height = lines.length * lineHeight + 3; // 3mm만 더함 (기존 cellPadding * 2 = 10mm 대신)
+            detailHeights.push(height);
+            maxDetailHeight = Math.max(maxDetailHeight, height);
+          } else {
+            // details가 없으면 최소 높이만 유지 (공란)
+            detailHeights.push(cellPadding * 2);
+            maxDetailHeight = Math.max(maxDetailHeight, cellPadding * 2);
+          }
         } else {
-          detailHeights.push(lineHeight + 3); // "-" 표시 높이 (3mm만 더함)
-          maxDetailHeight = Math.max(maxDetailHeight, lineHeight + 3);
+          // 빈 셀도 최소 높이만 유지 (공란)
+          detailHeights.push(cellPadding * 2);
+          maxDetailHeight = Math.max(maxDetailHeight, cellPadding * 2);
         }
-      });
+      }
 
       // 최소 높이 보장
       const minRow2Height = 15;
@@ -533,25 +597,36 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       });
 
       // Row 1 라벨(실천 과제 항목) - 각 라벨의 텍스트 블록 중앙이 셀 정중앙에 오도록
-      group.forEach((item, idx) => {
+      for (let idx = 0; idx < 4; idx++) {
         const cellXCenter =
           tableStartX + indexColumnWidth + dataColumnWidth * idx + dataColumnWidth / 2;
-        const labelLines = allLabelLines[idx];
         
-        // 텍스트 블록 높이 계산
-        const textBlockH = labelLines.length * lineH;
-        
-        // 시작 Y는 반드시 이 공식으로 계산: startY = row1Center - textBlockH/2 + baselineOffset
-        const startY = row1Center - textBlockH / 2 + baselineOffset;
+        if (idx < group.length) {
+          // 실제 데이터가 있는 경우
+          const labelLines = allLabelLines[idx];
+          
+          // 텍스트 블록 높이 계산
+          const textBlockH = labelLines.length * lineH;
+          
+          // 시작 Y는 반드시 이 공식으로 계산: startY = row1Center - textBlockH/2 + baselineOffset
+          const startY = row1Center - textBlockH / 2 + baselineOffset;
 
-        // baseline 옵션 사용 금지, 그냥 doc.text로 찍기
-        labelLines.forEach((line: string, lineIdx: number) => {
-          doc.text(line, cellXCenter, startY + lineIdx * lineH, {
+          // baseline 옵션 사용 금지, 그냥 doc.text로 찍기
+          labelLines.forEach((line: string, lineIdx: number) => {
+            doc.text(line, cellXCenter, startY + lineIdx * lineH, {
+              align: "center",
+              maxWidth: maxTextWidth,
+            });
+          });
+        } else {
+          // 빈 셀인 경우 하이픈 표시
+          const startY = row1Center;
+          doc.text("-", cellXCenter, startY, {
             align: "center",
             maxWidth: maxTextWidth,
           });
-        });
-      });
+        }
+      }
 
       // Row 2: 인덱스 "세부\n실천 계획" + 세부 내용들
       const row2StartY = tableStartY + row1Height;
@@ -571,55 +646,54 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       doc.setFont("NanumMyeongjo", "normal");
       doc.setFontSize(fontSize);
       
-      group.forEach((item, idx) => {
+      for (let idx = 0; idx < 4; idx++) {
         const x = tableStartX + indexColumnWidth + dataColumnWidth * idx;
         const cellWidth = dataColumnWidth - leftPadding - cellPadding + 1; // 왼쪽 여백과 오른쪽 패딩 제외 (좌우 각각 1mm 감소로 총 2mm 증가)
         const cellX = x + leftPadding; // 왼쪽 여백 4mm (5mm에서 1mm 감소)
         const cellStartY = row2StartY + cellPadding; // 위쪽 정렬 (셀 패딩 0.5cm)
         
-        if (item.details.length > 0) {
-          // 각 detail 항목을 개별적으로 처리하여 표식 위치 보호
-          let currentLineIndex = 0;
-          const bulletIndent = 4; // 표식과 텍스트 사이 간격 (mm)
+        if (idx < group.length) {
+          // 실제 데이터가 있는 경우
+          const item = group[idx];
           
-          item.details.forEach((detail, detailIdx) => {
-            // 각 detail 항목을 줄바꿈 처리
-            const detailLines = doc.splitTextToSize(detail, cellWidth - bulletIndent);
+          if (item.details.length > 0) {
+            // 각 detail 항목을 개별적으로 처리하여 표식 위치 보호
+            let currentLineIndex = 0;
+            const bulletIndent = 4; // 표식과 텍스트 사이 간격 (mm)
             
-            detailLines.forEach((line: string, lineIdx: number) => {
-              const yPos = cellStartY + currentLineIndex * lineHeight + 2;
+            item.details.forEach((detail, detailIdx) => {
+              // 각 detail 항목을 줄바꿈 처리
+              const detailLines = doc.splitTextToSize(detail, cellWidth - bulletIndent);
               
-              if (lineIdx === 0) {
-                // 첫 번째 줄: 표식(•) 포함
-                doc.text(
-                  `• ${line}`,
-                  cellX,
-                  yPos,
-                  { align: "left", maxWidth: cellWidth }
-                );
-              } else {
-                // 이후 줄: 들여쓰기 추가하여 표식 위치 보호
-                doc.text(
-                  line,
-                  cellX + bulletIndent,
-                  yPos,
-                  { align: "left", maxWidth: cellWidth - bulletIndent }
-                );
-              }
-              
-              currentLineIndex++;
+              detailLines.forEach((line: string, lineIdx: number) => {
+                const yPos = cellStartY + currentLineIndex * lineHeight + 2;
+                
+                if (lineIdx === 0) {
+                  // 첫 번째 줄: 표식(•) 포함
+                  doc.text(
+                    `• ${line}`,
+                    cellX,
+                    yPos,
+                    { align: "left", maxWidth: cellWidth }
+                  );
+                } else {
+                  // 이후 줄: 들여쓰기 추가하여 표식 위치 보호
+                  doc.text(
+                    line,
+                    cellX + bulletIndent,
+                    yPos,
+                    { align: "left", maxWidth: cellWidth - bulletIndent }
+                  );
+                }
+                
+                currentLineIndex++;
+              });
             });
-          });
-        } else {
-          // 빈 경우 "-" 표시
-          doc.text(
-            "-",
-            cellX,
-            cellStartY + 2,
-            { align: "left" }
-          );
+          }
+          // details가 없으면 공란으로 둠 (하이픈 표시 안 함)
         }
-      });
+        // 빈 셀인 경우도 공란으로 둠 (하이픈 표시 안 함)
+      }
 
       currentY = tableStartY + totalTableHeight + 3; // 테이블 아래 3mm 간격
     });

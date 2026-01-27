@@ -30,7 +30,7 @@ const CARDS: Step2Card[] = [
   {
     title: "실천 문화 확산",
     items: [
-      { id: "culture-01", label: "탄소중립 학생 교육 프로그램 실천 프로젝트 운영" },
+      { id: "culture-01", label: "탄소중립 학생 교육 프로그램, 실천 프로젝트 운영" },
       { id: "culture-02", label: "학생 동아리 중심 탄소중립 실천활동 정기적 운영" },
       { id: "culture-03", label: "교직원 탄소중립 연수 운영" },
       { id: "culture-04", label: "교직원 학습공동체 운영" },
@@ -45,7 +45,7 @@ const CARDS: Step2Card[] = [
   {
     title: "학교 환경 조성",
     items: [
-      { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내공간 조성" },
+      { id: "env-01", label: "탄소 문해력 교육 게시판 또는 안내 공간 조성" },
       {
         id: "env-03",
         label: "냉 · 난방 효율 향상을 위한 환경 개선 사업 추진",
@@ -244,7 +244,14 @@ export function Step2Cards() {
           ))}
         </div>
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-[color:rgba(75,70,41,0.7)] shadow-sm hover:bg-slate-50 hover:border-slate-400 transition-colors cursor-pointer"
+            onClick={() => router.push("/1")}
+          >
+            이전으로
+          </button>
           <button
             type="button"
             className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
