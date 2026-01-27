@@ -69,132 +69,22 @@ const PDF_CONFIG = {
   schoolNameRightMargin: 5, // 학교이름 오른쪽 여백 0.5cm
 } as const;
 
-// ✅ puppeteer / chromium 설정: 환경별 분기 처리
-let puppeteer: any;
-let chromium: any;
-
-// 로컬 개발 환경인지 확인
-const isDev = process.env.NODE_ENV === "development" || !process.env.VERCEL;
-
-// 동적 import로 메모리 최적화
-async function getPuppeteer() {
-  if (puppeteer) return puppeteer;
-
-  if (isDev) {
-    // 로컬 개발: 일반 puppeteer 사용
-    puppeteer = require("puppeteer");
-  } else {
-    // 프로덕션: puppeteer-core + @sparticuz/chromium
-    puppeteer = require("puppeteer-core");
-    try {
-      chromium = require("@sparticuz/chromium");
-      if (chromium) {
-        chromium.setGraphicsMode = true;
-        chromium.setHeadlessMode = true;
-      }
-    } catch (error) {
-      console.error("@sparticuz/chromium 로드 실패:", error);
-      throw new Error("Chromium을 로드할 수 없습니다. Vercel 환경을 확인해주세요.");
-    }
-  }
-
-  return puppeteer;
-}
+// puppeteer 직접 사용 제거: /api/capture를 재사용
 
 /**
  * PDF 생성 함수 (스크린샷 기반)
  * 
- * 1. HTML 페이지를 렌더링
- * 2. headless chromium으로 스크린샷
- * 3. 이미지를 A4 가로 PDF에 삽입
+ * 1. /api/capture를 호출하여 스크린샷 이미지 획득
+ * 2. 이미지를 A4 가로 PDF에 삽입
  * 
  * @param payload - PDF 생성에 필요한 데이터
  * @returns PDF Blob (Uint8Array)
  */
 async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Array> {
-  let browser: any = null;
   const startTime = Date.now();
 
   try {
-    // puppeteer 초기화
-    const puppeteerInstance = await getPuppeteer();
-
-    // 브라우저 설정 (4페이지와 동일한 너비: 1200px)
-    const viewportWidth = 1200; // 가로 1200px (4페이지 max-w-[1200px]와 동일)
-    const viewportHeight = 1200; // 세로는 충분히 크게 (카드 높이에 맞춰 clip)
-    const deviceScaleFactor = 3; // 고해상도 (3배)
-
-    let browserConfig: any = {
-      defaultViewport: {
-        width: viewportWidth,
-        height: viewportHeight,
-        deviceScaleFactor,
-      },
-      headless: true,
-    };
-
-    if (isDev) {
-      // 로컬 개발 환경
-      browserConfig.args = [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--no-zygote",
-        "--disable-gpu",
-      ];
-    } else {
-      // Vercel 프로덕션 환경
-      if (!chromium) {
-        throw new Error("Chromium이 초기화되지 않았습니다.");
-      }
-
-      const executablePath = await chromium.executablePath();
-      if (!executablePath) {
-        throw new Error("Chromium 실행 파일을 찾을 수 없습니다.");
-      }
-
-      browserConfig.args = chromium.args;
-      browserConfig.executablePath = executablePath;
-    }
-
-    // 브라우저 실행
-    browser = await puppeteerInstance.launch(browserConfig);
-    const page = await browser.newPage();
-
-    // 뷰포트 설정
-    await page.setViewport({
-      width: viewportWidth,
-      height: viewportHeight,
-      deviceScaleFactor,
-    });
-
-    // 디버깅: 네트워크 응답 로깅 (300 이상 리다이렉트/에러 감지)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    page.on("response", (res: any) => {
-      const status = res.status();
-      if (status >= 300) {
-        console.log("RES:", status, res.url());
-      }
-    });
-
-    // 디버깅: 네비게이션 이벤트 로깅
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    page.on("framenavigated", (frame: any) => {
-      if (frame === page.mainFrame()) {
-        console.log("NAV:", frame.url());
-      }
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    page.on("console", (msg: any) => {
-      console.log("PAGE LOG:", msg.text());
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    page.on("pageerror", (err: any) => {
-      console.log("PAGE ERROR:", err.message);
-    });
-
+    // /api/capture를 사용하여 스크린샷 이미지 획득
     // 렌더링할 URL 생성
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL
@@ -214,151 +104,112 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     const renderUrl = `${baseUrl}/pdf/cards?data=${dataParam}&screenshot=1`;
     console.log("렌더링 URL:", renderUrl);
 
-    // 재시도 로직: 네비게이션 발생 시 최대 3회 재시도
-    let screenshot: Buffer | undefined;
-    let elementSize: { width: number; height: number } | undefined;
+    // /api/capture 호출 (재시도 로직 포함)
+    let screenshotBuffer: Buffer | undefined;
     
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        console.log(`=== 캡처 시도 ${attempt}/3 ===`);
+        console.log(`=== /api/capture 호출 시도 ${attempt}/3 ===`);
         
-        // 페이지 로드
-        await page.goto(renderUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
+        // /api/capture 호출
+        const captureResponse = await fetch(`${baseUrl}/api/capture`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: renderUrl,
+            selector: "#capture-root",
+            width: 1200,
+            height: 1200,
+            format: "png",
+            timeout: 30000,
+          }),
         });
 
-        // 필수 진단 로그: "지금 페이지가 뭐였는지" 확인
-        const landed = page.url();
-        const pageTitle = await page.title();
-        const htmlHead = (await page.content()).slice(0, 500);
-        
-        console.log("=== 페이지 로드 후 진단 ===");
-        console.log("LANDED URL:", landed);
-        console.log("TITLE:", pageTitle);
-        console.log("HTML_HEAD:", htmlHead);
-        
-        // 스크린샷 저장 (디버깅용)
-        try {
-          await page.screenshot({ path: `/tmp/landed_${attempt}.png`, fullPage: true });
-          console.log(`스크린샷 저장: /tmp/landed_${attempt}.png`);
-        } catch (screenshotError) {
-          console.warn("스크린샷 저장 실패:", screenshotError);
-        }
-
-        // 원인 A 진단: 인증/리다이렉트로 다른 페이지를 보고 있는지 확인
-        if (!landed.includes("/pdf/cards")) {
-          const errorMessage = `[원인 A] 캡처 URL이 인증/리다이렉트로 다른 페이지를 보고 있습니다.
-원인: ${renderUrl} → ${landed}
-TITLE: ${pageTitle}
+        // 네비게이션/리다이렉트 감지: vercel.com/login으로 튀면 즉시 실패
+        if (!captureResponse.ok) {
+          // 응답 본문을 텍스트로 먼저 읽어서 JSON인지 확인
+          const responseText = await captureResponse.text();
+          let errorJson: any;
+          try {
+            errorJson = JSON.parse(responseText);
+          } catch {
+            errorJson = { error: responseText };
+          }
+          
+          // 에러 응답에 네비게이션 정보가 있는지 확인
+          const errorMessage = errorJson.error || responseText;
+          console.error(`/api/capture 에러 응답 (${captureResponse.status}):`, errorMessage);
+          
+          if (errorMessage && (
+            errorMessage.includes("vercel.com/login") ||
+            errorMessage.includes("/login") ||
+            errorMessage.includes("401") ||
+            errorMessage.includes("403") ||
+            errorMessage.includes("redirect")
+          )) {
+            const detailedError = `[원인 A] 캡처 URL이 인증/리다이렉트로 다른 페이지를 보고 있습니다.
+원인: ${renderUrl} → ${errorMessage}
 처방: /pdf/cards?screenshot=1은 무조건 공개 렌더되어야 합니다. 
 - Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하세요.
-- 또는 Production 배포(공개) 도메인에서 캡처하세요.
-- 또는 캡처 URL을 동일 서버 내부로 바꾸세요 (http://127.0.0.1:3000).`;
-          console.error(errorMessage);
-          throw new Error(errorMessage);
-        }
-
-        // 원인 B 진단: #capture-root가 페이지에 있는지 확인
-        const hasCaptureRoot = htmlHead.includes("capture-root") || 
-                              htmlHead.includes("captureRoot") ||
-                              htmlHead.includes("capture_root");
-        
-        if (!hasCaptureRoot) {
-          // HTML 전체에서 확인
-          const fullHtml = await page.content();
-          const hasCaptureRootInFull = fullHtml.includes("capture-root");
-          
-          if (!hasCaptureRootInFull) {
-            const errorMessage = `[원인 B] #capture-root id가 페이지에 없습니다.
-LANDED URL: ${landed}
-TITLE: ${pageTitle}
-HTML_HEAD에 capture-root 문자열이 없습니다.
-처방: /pdf/cards 페이지에서 반드시 항상 <div id="capture-root">가 렌더되도록 수정하세요.
-- 조건부 렌더(데이터 없으면 return null 등) 제거
-- data 파라미터 파싱 실패해도 #capture-root만큼은 렌더되게 ("에러 UI도 capture-root 안에")`;
-            console.error(errorMessage);
-            throw new Error(errorMessage);
-          }
-        }
-
-        // 안전한 구간: URL 확인 후 #capture-root 대기
-        await page.waitForSelector("#capture-root", { visible: true, timeout: 30000 });
-
-        // URL 재확인 (네비게이션 발생 여부)
-        const afterSelectorUrl = page.url();
-        if (!afterSelectorUrl.includes("/pdf/cards")) {
-          throw new Error(`[원인 A] waitForSelector 후 URL이 변경되었습니다: ${afterSelectorUrl}`);
-        }
-
-        // 여기서부터만 evaluate 허용 (안전한 구간)
-        console.log("레이아웃 안정화 대기 중...");
-        await page.evaluate(async () => {
-          // 폰트 로딩 완료
-          try {
-            await (document as any).fonts?.ready;
-          } catch (e) {
-            // 폰트 API가 없거나 실패해도 계속 진행
+- 또는 Production 배포(공개) 도메인에서 캡처하세요.`;
+            console.error(detailedError);
+            throw new Error(detailedError);
           }
           
-          // 다음 프레임 2번 대기 (레이아웃 안정화)
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                resolve();
-              });
-            });
-          });
-        });
-
-        // 추가 안전 대기
-        await new Promise((r) => setTimeout(r, 300));
-
-        // 디버깅: 캡처 직전 URL 확인 (리다이렉트 재확인)
-        const beforeScreenshotUrl = page.url();
-        console.log("before screenshot url:", beforeScreenshotUrl);
+          // sharp 에러인 경우
+          if (errorMessage.includes("Input buffer contains unsupported image format") || 
+              errorMessage.includes("unsupported image format")) {
+            throw new Error(`/api/capture에서 이미지 처리 실패: ${errorMessage}. 스크린샷 캡처는 성공했지만 이미지 변환 중 오류가 발생했습니다.`);
+          }
+          
+          throw new Error(`/api/capture 호출 실패: ${captureResponse.status} ${errorMessage}`);
+        }
         
-        if (!beforeScreenshotUrl.includes("/pdf/cards")) {
-          throw new Error(`[원인 A] 캡처 직전에 URL이 변경되었습니다: ${beforeScreenshotUrl}`);
+        // Content-Type 확인 (이미지인지 검증)
+        const contentType = captureResponse.headers.get("content-type");
+        if (!contentType || (!contentType.startsWith("image/") && !contentType.includes("png") && !contentType.includes("jpeg") && !contentType.includes("jpg"))) {
+          const responseText = await captureResponse.text();
+          console.error("예상치 못한 Content-Type:", contentType);
+          console.error("응답 본문:", responseText.substring(0, 500));
+          throw new Error(`/api/capture가 이미지가 아닌 응답을 반환했습니다. Content-Type: ${contentType}`);
         }
 
-        // 캡처된 요소의 실제 크기 가져오기 (스크린샷 전에)
-        const currentElementSize = await page.evaluate(() => {
-          const element = document.getElementById("capture-root");
-          if (!element) return { width: 1900, height: 800 };
-          const rect = element.getBoundingClientRect();
-          return {
-            width: Math.ceil(rect.width),
-            height: Math.ceil(rect.height),
-          };
-        });
-
-        console.log(`캡처 대상 요소 크기: ${currentElementSize.width}x${currentElementSize.height}`);
-
-        // 카드 높이에 맞춰 스크린샷 (요소 크기에 맞춰 clip)
-        const currentScreenshot = await page.screenshot({
-          type: "png",
-          fullPage: false,
-          clip: {
-            x: 0,
-            y: 0,
-            width: currentElementSize.width,
-            height: currentElementSize.height,
-          },
-        }) as Buffer;
-
-        // 성공 시 변수에 할당
-        elementSize = currentElementSize;
-        screenshot = currentScreenshot;
-
-        // 성공: 루프 탈출
-        console.log(`캡처 성공 (시도 ${attempt}/3)`);
+        // 이미지 버퍼 획득
+        const arrayBuffer = await captureResponse.arrayBuffer();
+        screenshotBuffer = Buffer.from(arrayBuffer);
+        
+        // 이미지 버퍼 검증 (PNG/JPEG 시그니처 확인)
+        if (screenshotBuffer.length === 0) {
+          throw new Error("이미지 버퍼가 비어있습니다.");
+        }
+        
+        const isPNG = screenshotBuffer.length >= 4 && 
+                      screenshotBuffer[0] === 0x89 && 
+                      screenshotBuffer[1] === 0x50 && 
+                      screenshotBuffer[2] === 0x4E && 
+                      screenshotBuffer[3] === 0x47;
+        const isJPEG = screenshotBuffer.length >= 3 && 
+                       screenshotBuffer[0] === 0xFF && 
+                       screenshotBuffer[1] === 0xD8 && 
+                       screenshotBuffer[2] === 0xFF;
+        
+        if (!isPNG && !isJPEG) {
+          // 버퍼가 JSON 에러 메시지일 수 있음
+          const preview = screenshotBuffer.slice(0, 200).toString('utf8');
+          if (preview.trim().startsWith('{') || preview.trim().startsWith('<')) {
+            throw new Error(`이미지가 아닌 에러 응답을 받았습니다: ${preview.substring(0, 200)}`);
+          }
+          throw new Error(`이미지 형식이 올바르지 않습니다. 버퍼 시작 (hex): ${screenshotBuffer.slice(0, 20).toString('hex')} (길이: ${screenshotBuffer.length} bytes)`);
+        }
+        
+        console.log(`스크린샷 캡처 완료: ${screenshotBuffer.length} bytes (${isPNG ? 'PNG' : 'JPEG'}, 시도 ${attempt}/3)`);
         break;
         
       } catch (error) {
         console.log(`CAPTURE RETRY: 시도 ${attempt}/3 실패`, error);
         if (attempt === 3) {
-          // 마지막 시도 실패 시 에러 throw
           throw error;
         }
         // 재시도 전 짧은 대기
@@ -366,19 +217,11 @@ HTML_HEAD에 capture-root 문자열이 없습니다.
       }
     }
 
-    if (!screenshot || !elementSize) {
+    if (!screenshotBuffer) {
       throw new Error("스크린샷 캡처 실패: 3회 재시도 후에도 성공하지 못했습니다.");
     }
 
-    // 타입 안전성 보장 (위에서 체크했지만 TypeScript를 위해)
-    const finalScreenshot = screenshot;
-    const finalElementSize = elementSize;
-
-    // 브라우저 종료
-    await browser.close();
-    browser = null;
-
-    console.log(`스크린샷 캡처 완료: ${finalScreenshot.length} bytes (${Date.now() - startTime}ms)`);
+    console.log(`스크린샷 캡처 완료: ${screenshotBuffer.length} bytes (${Date.now() - startTime}ms)`);
 
     // PDF 생성
     const doc = new jsPDF({
@@ -454,11 +297,46 @@ HTML_HEAD에 capture-root 문자열이 없습니다.
     currentY += subtitle1Height + 5; // subtitle1 아래 5mm 간격
 
     // 4. 스크린샷 이미지 추가 (subtitle1 아래, 85% 크기)
-    const screenshotBase64 = Buffer.from(screenshot as Buffer).toString("base64");
+    // 스크린샷 이미지 메타데이터로 비율 계산
+    let screenshotMetadata;
+    try {
+      screenshotMetadata = await sharp(screenshotBuffer).metadata();
+    } catch (error) {
+      console.error("이미지 메타데이터 읽기 실패:", error);
+      // 이미지 버퍼 검증
+      const preview = screenshotBuffer.slice(0, 100);
+      console.error("버퍼 시작 부분:", preview.toString('hex').substring(0, 100));
+      throw new Error(`이미지 메타데이터를 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
+    let screenshotWidthPx = screenshotMetadata.width || 1200;
+    let screenshotHeightPx = screenshotMetadata.height || 800;
+    
+    // 스티칭으로 인한 중복 제거: 이미지가 스티칭된 경우(높이가 비정상적으로 큰 경우) 상단 절반만 사용
+    // 원본 요소 높이가 약 302px이므로, 스티칭된 이미지의 높이가 400px 이상이면 상단 절반만 사용
+    const originalElementHeight = 302; // 로그에서 확인한 원본 요소 높이
+    const stitchingThreshold = originalElementHeight * 1.3; // 30% 여유를 두고 판단
+    
+    if (screenshotHeightPx > stitchingThreshold) {
+      console.log(`스티칭된 이미지 감지: 전체 높이 ${screenshotHeightPx}px → 상단 ${originalElementHeight}px만 사용`);
+      // 상단 originalElementHeight만큼만 잘라내기
+      const croppedBuffer = await sharp(screenshotBuffer)
+        .extract({ 
+          left: 0, 
+          top: 0, 
+          width: screenshotWidthPx, 
+          height: originalElementHeight 
+        })
+        .toBuffer();
+      
+      screenshotBuffer = croppedBuffer;
+      screenshotHeightPx = originalElementHeight;
+      console.log(`이미지 자르기 완료: ${screenshotWidthPx}x${screenshotHeightPx}px`);
+    }
+    
+    const screenshotBase64 = screenshotBuffer.toString("base64");
     const screenshotData = `data:image/png;base64,${screenshotBase64}`;
-
-    // 스크린샷 이미지 비율 계산
-    const screenshotAspectRatio = finalElementSize.width / finalElementSize.height;
+    const screenshotAspectRatio = screenshotWidthPx / screenshotHeightPx;
     
     // 남은 공간 계산
     const remainingHeight = pageHeight - currentY; // 하단 여백 없음
@@ -841,15 +719,6 @@ HTML_HEAD에 capture-root 문자열이 없습니다.
 
     throw new Error("PDF 생성 결과를 가져올 수 없습니다. 모든 출력 방식이 실패했습니다.");
   } catch (error) {
-    // 브라우저 정리
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (e) {
-        console.error("브라우저 종료 오류:", e);
-      }
-    }
-
     console.error("PDF 생성 오류:", error);
     throw new Error(`PDF 생성 실패: ${error instanceof Error ? error.message : String(error)}`);
   }

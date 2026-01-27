@@ -12,7 +12,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useEffect } from "react";
+import { Suspense, useMemo, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 import { SemiShareGauge } from "../../../components/Step3Overview";
@@ -47,6 +47,54 @@ function CardsContent() {
   const searchParams = useSearchParams();
   const dataParam = searchParams.get("data");
   const isScreenshot = searchParams.get("screenshot") === "1";
+  
+  // 디버깅: 렌더링 횟수 추적 (useRef로 마운트 추적)
+  const renderCountRef = useRef(0);
+  const mountIdRef = useRef(Math.random().toString(36).substring(7));
+  
+  useEffect(() => {
+    renderCountRef.current += 1;
+    console.log(`[PDF/CARDS] CardsContent 렌더링 #${renderCountRef.current} (마운트 ID: ${mountIdRef.current})`, { 
+      dataParam: dataParam?.substring(0, 50), 
+      isScreenshot,
+      timestamp: new Date().toISOString()
+    });
+    
+    // DOM에 #capture-root가 몇 개 있는지 확인
+    const captureRoots = document.querySelectorAll("#capture-root");
+    console.log(`[PDF/CARDS] #capture-root 개수: ${captureRoots.length}`);
+    if (captureRoots.length > 1) {
+      console.error(`[PDF/CARDS] ⚠️ #capture-root가 ${captureRoots.length}개 발견됨!`);
+      captureRoots.forEach((el, idx) => {
+        console.error(`[PDF/CARDS] #capture-root[${idx}]:`, {
+          parent: el.parentElement?.tagName,
+          nextSibling: el.nextElementSibling?.tagName,
+          innerHTML: el.innerHTML.substring(0, 100)
+        });
+      });
+    }
+    
+    // 카드 섹션이 몇 개 있는지 확인
+    const cardSections = document.querySelectorAll(".grid.grid-cols-\\[1\\.4fr_1fr\\]");
+    console.log(`[PDF/CARDS] 카드 섹션(grid grid-cols-[1.4fr_1fr]) 개수: ${cardSections.length}`);
+    if (cardSections.length > 1) {
+      console.error(`[PDF/CARDS] ⚠️ 카드 섹션이 ${cardSections.length}개 발견됨!`);
+      cardSections.forEach((el, idx) => {
+        console.error(`[PDF/CARDS] 카드 섹션[${idx}]:`, {
+          parent: el.parentElement?.tagName,
+          children: el.children.length,
+          innerHTML: el.innerHTML.substring(0, 200)
+        });
+      });
+    }
+    
+    // rounded-2xl border border-slate-200 클래스를 가진 카드가 몇 개 있는지 확인
+    const cards = document.querySelectorAll(".rounded-2xl.border.border-slate-200");
+    console.log(`[PDF/CARDS] 카드(.rounded-2xl.border.border-slate-200) 개수: ${cards.length}`);
+    if (cards.length > 2) {
+      console.error(`[PDF/CARDS] ⚠️ 카드가 ${cards.length}개 발견됨! (예상: 2개)`);
+    }
+  });
 
   // screenshot=1일 때 모든 네비게이션/리다이렉트 절대 금지
   useEffect(() => {
@@ -263,40 +311,49 @@ function CardsContent() {
     tooltip: { enabled: false },
   });
 
-  // 캡처 준비 완료 플래그 설정 (즉시 초기화)
-  // 클라이언트 사이드에서만 실행되도록 보장
+  // 캡처 준비 완료 플래그 설정 (data-ready="1" 방식)
+  // /api/capture가 사용하는 data-ready selector 방식 사용
   useEffect(() => {
-    // 초기값을 false로 설정 (즉시 실행)
     if (typeof window === "undefined") return;
     
-    (window as any).__CAPTURE_READY__ = false;
-    console.log("[PDF/CARDS] __CAPTURE_READY__ initialized to false");
+    // 디버깅: #capture-root 개수 확인
+    const allCaptureRoots = document.querySelectorAll("#capture-root");
+    if (allCaptureRoots.length > 1) {
+      console.error(`[PDF/CARDS] ⚠️ 경고: #capture-root가 ${allCaptureRoots.length}개 발견됨!`);
+      allCaptureRoots.forEach((el, idx) => {
+        console.error(`[PDF/CARDS] #capture-root[${idx}]:`, el);
+      });
+    }
+    
+    const setReady = () => {
+      const captureRoot = document.getElementById("capture-root");
+      if (captureRoot) {
+        captureRoot.setAttribute("data-ready", "1");
+        console.log("[PDF/CARDS] data-ready='1' 설정 완료");
+      } else {
+        console.error("[PDF/CARDS] ⚠️ #capture-root를 찾을 수 없음!");
+      }
+    };
     
     const done = async () => {
       try {
         // 폰트 로딩 완료까지 기다림 (지원 안되면 즉시 통과)
         const fontsReady = (document as any).fonts?.ready;
         if (fontsReady && typeof fontsReady.then === 'function') {
-          // 타임아웃 설정 (최대 3초)
           await Promise.race([
             fontsReady,
-            new Promise((resolve) => setTimeout(resolve, 3000))
+            new Promise((resolve) => setTimeout(resolve, 2000))
           ]);
-        } else {
-          // fonts.ready가 없으면 짧은 대기 후 진행
-          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       } catch (error) {
         // 폰트 로딩 실패해도 계속 진행
         console.warn("[PDF/CARDS] Font loading check failed:", error);
       } finally {
-        // 항상 플래그를 true로 설정
-        (window as any).__CAPTURE_READY__ = true;
-        console.log("[PDF/CARDS] __CAPTURE_READY__ set to true");
+        // 약간의 지연 후 ready 설정 (컴포넌트 렌더링 완료 대기)
+        setTimeout(setReady, 300);
       }
     };
     
-    // 즉시 실행 (비동기)
     done();
   }, []);
 
@@ -313,7 +370,7 @@ function CardsContent() {
           }
         `
       }} />
-      <div id="capture-root" className="mx-auto" style={{ fontFamily: 'var(--font-brand), var(--font-noto-sans-kr), "Noto Sans KR", "Nanum Gothic", var(--font-geist-sans), Arial, Helvetica, sans-serif', width: '1200px', maxWidth: '1200px', backgroundColor: 'white' }}>
+      <div id="capture-root" className="mx-auto" style={{ fontFamily: 'var(--font-brand), var(--font-noto-sans-kr), "Noto Sans KR", "Nanum Gothic", var(--font-geist-sans), Arial, Helvetica, sans-serif', width: '1200px', maxWidth: '1200px', minHeight: '400px', height: 'auto', overflow: 'visible', backgroundColor: 'white', paddingBottom: '30px', display: 'block' }}>
       {dataMissing ? (
         <div style={{ padding: '20px', textAlign: 'center', color: '#d32f2f' }}>
           <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>데이터 없음</div>
@@ -327,7 +384,7 @@ function CardsContent() {
       ) : (
         <>
           {/* 1층: 상단 그래프 영역 - 4페이지와 동일한 구조 */}
-          <div className="grid grid-cols-[1.4fr_1fr] items-stretch gap-6">
+          <div className="grid grid-cols-[1.4fr_1fr] items-start gap-6" style={{ flexShrink: 0 }}>
         {/* 좌측: 총 탄소배출량 그래프 - 4페이지와 동일 */}
         <div className="rounded-2xl border border-slate-200 bg-white/70 shadow-sm backdrop-blur h-full">
           <div className="px-6 pt-6 pb-6">
@@ -401,13 +458,17 @@ function CardsContent() {
 }
 
 export default function PdfCardsPage() {
+  // 디버깅: 페이지 컴포넌트 렌더링 추적
+  useEffect(() => {
+    console.log("[PDF/CARDS] PdfCardsPage 렌더링됨");
+  });
+  
+  // useSearchParams는 Suspense로 감싸져야 하지만, 
+  // 이중 렌더링 문제를 해결하기 위해 Suspense를 제거하고 직접 렌더링
+  // Next.js의 useSearchParams는 자동으로 Suspense boundary를 요구하므로
+  // 대신 try-catch로 처리하거나 Suspense를 유지하되 fallback을 null로 설정
   return (
-    <Suspense fallback={
-      // Suspense fallback도 #capture-root 안에 있어야 함
-      <div id="capture-root" style={{ padding: '20px', textAlign: 'center' }}>
-        <div>로딩 중...</div>
-      </div>
-    }>
+    <Suspense fallback={null}>
       <CardsContent />
     </Suspense>
   );

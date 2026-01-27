@@ -688,28 +688,68 @@ export async function POST(request: NextRequest) {
             throw new Error(`모든 selector 폴백 실패: ${selectorFallbacks.join(', ')}`);
           }
           
-          // ✅ 요소의 전체 높이(스크롤 포함) 계산 및 viewport 조정
+          // ✅ 요소의 전체 높이(스크롤 포함) 계산 및 스크롤 가능 여부 검증
           const elementInfo = await page.evaluate((sel: string) => {
             const el = document.querySelector(sel) as HTMLElement;
             if (!el) return null;
+            
+            const computedStyle = window.getComputedStyle(el);
+            const overflowY = computedStyle.overflowY;
+            const overflow = computedStyle.overflow;
+            
             return {
               scrollHeight: el.scrollHeight,
               scrollWidth: el.scrollWidth,
               clientHeight: el.clientHeight,
               clientWidth: el.clientWidth,
+              overflowY: overflowY,
+              overflow: overflow,
+              scrollTop: el.scrollTop,
             };
           }, usedSelector);
           
           if (elementInfo) {
             console.log(`요소 크기: ${elementInfo.clientWidth}x${elementInfo.clientHeight} (보이는 영역), ${elementInfo.scrollWidth}x${elementInfo.scrollHeight} (전체 스크롤 영역)`);
+            console.log(`스크롤 스타일: overflowY=${elementInfo.overflowY}, overflow=${elementInfo.overflow}`);
             
-            // ✅ 스크롤이 여전히 필요한지 확인 (스크롤 제거 후에도 scrollHeight > clientHeight인 경우)
-            const needsStitching = elementInfo.scrollHeight > elementInfo.clientHeight;
+            // ✅ 진짜 스크롤 컨테이너인지 검증
+            const hasScrollableOverflow = elementInfo.overflowY === 'auto' || elementInfo.overflowY === 'scroll' || 
+                                         elementInfo.overflow === 'auto' || elementInfo.overflow === 'scroll';
+            const hasScrollableContent = elementInfo.scrollHeight > elementInfo.clientHeight;
             
-            if (needsStitching) {
-              console.log(`스크롤 컨테이너 스티칭 방식 사용 (scrollHeight: ${elementInfo.scrollHeight} > clientHeight: ${elementInfo.clientHeight})`);
+            console.log(`스크롤 가능성 검증: overflowY/overflow가 scroll 계열=${hasScrollableOverflow}, scrollHeight > clientHeight=${hasScrollableContent}`);
+            
+            // 스크롤 가능 여부 실제 테스트
+            let isActuallyScrollable = false;
+            if (hasScrollableOverflow && hasScrollableContent) {
+              // scrollTop을 변경해보고 실제로 변하는지 확인
+              const scrollTestResult = await page.evaluate((sel: string) => {
+                const el = document.querySelector(sel) as HTMLElement;
+                if (!el) return { scrollable: false, reason: 'element not found' };
+                
+                const initialScrollTop = el.scrollTop;
+                el.scrollTop = 100; // 100px 스크롤 시도
+                const afterScrollTop = el.scrollTop;
+                el.scrollTop = initialScrollTop; // 원래대로 복구
+                
+                const scrollable = afterScrollTop !== initialScrollTop;
+                return {
+                  scrollable,
+                  initialScrollTop,
+                  afterScrollTop,
+                  reason: scrollable ? 'scrollTop changed' : 'scrollTop unchanged'
+                };
+              }, usedSelector);
               
-              // ✅ Fallback: 스크롤 컨테이너 스티칭 방식
+              isActuallyScrollable = scrollTestResult.scrollable;
+              console.log(`스크롤 테스트 결과: scrollable=${isActuallyScrollable}, initial=${scrollTestResult.initialScrollTop}, after=${scrollTestResult.afterScrollTop}, reason=${scrollTestResult.reason}`);
+            }
+            
+            // ✅ 진짜 스크롤 컨테이너일 때만 스티칭 수행
+            if (isActuallyScrollable) {
+              console.log(`✅ 진짜 스크롤 컨테이너 확인됨 → 스티칭 방식 사용`);
+              
+              // ✅ 스크롤 컨테이너 스티칭 방식
               // 요소를 스크롤하면서 여러 장 캡처 후 sharp로 합성
               const scrollStep = elementInfo.clientHeight * 0.9; // 90%씩 겹치기
               const totalScroll = elementInfo.scrollHeight - elementInfo.clientHeight;
@@ -738,6 +778,12 @@ export async function POST(request: NextRequest) {
                 
                 // 다음 위치로 스크롤 (마지막이 아니면)
                 if (i < numScreenshots - 1) {
+                  // 스크롤 전 scrollTop 확인
+                  const scrollBefore = await page.evaluate((sel: string) => {
+                    const el = document.querySelector(sel) as HTMLElement;
+                    return el ? el.scrollTop : 0;
+                  }, usedSelector);
+                  
                   await page.evaluate((sel: string, step: number) => {
                     const el = document.querySelector(sel) as HTMLElement;
                     if (el) {
@@ -746,21 +792,55 @@ export async function POST(request: NextRequest) {
                   }, usedSelector, scrollStep);
                   
                   await new Promise(resolve => setTimeout(resolve, 100));
+                  
+                  // 스크롤 후 scrollTop 확인 (실제로 변했는지 검증)
+                  const scrollAfter = await page.evaluate((sel: string) => {
+                    const el = document.querySelector(sel) as HTMLElement;
+                    return el ? el.scrollTop : 0;
+                  }, usedSelector);
+                  
+                  console.log(`스티칭 ${i + 1}/${numScreenshots}: scrollTop ${scrollBefore} → ${scrollAfter} (변화: ${scrollAfter - scrollBefore}px)`);
+                  
+                  // scrollTop이 변하지 않으면 스티칭 중단하고 단일 캡처로 폴백
+                  if (scrollAfter === scrollBefore) {
+                    console.warn(`⚠️ 스크롤이 실제로 변하지 않음 (${scrollBefore}px 고정) → 스티칭 중단, 단일 캡처로 폴백`);
+                    break; // 스티칭 루프 중단
+                  }
                 }
               }
               
               // ✅ sharp로 이미지 합성 (세로로 연결)
-              if (screenshots.length > 0) {
+              // 스크린샷이 1개만 있으면 스티칭 불필요, 단일 캡처로 처리
+              if (screenshots.length === 1) {
+                console.log(`스티칭 중단: 스크린샷 1장만 캡처됨 → 단일 캡처로 처리`);
+                originalScreenshot = screenshots[0];
+              } else if (screenshots.length > 1) {
                 console.log(`이미지 스티칭 시작: ${screenshots.length}장 합성`);
                 
                 // 각 이미지의 크기 계산
                 const imageMetadata = await Promise.all(
-                  screenshots.map(async (img) => {
-                    const metadata = await sharp(img).metadata();
-                    return {
-                      width: metadata.width || 0,
-                      height: metadata.height || 0,
-                    };
+                  screenshots.map(async (img, idx) => {
+                    // 이미지 버퍼 검증
+                    if (!img || img.length === 0) {
+                      throw new Error(`스크린샷 ${idx + 1}이 비어있습니다.`);
+                    }
+                    
+                    // 이미지 형식 검증
+                    const isPNG = img[0] === 0x89 && img[1] === 0x50 && img[2] === 0x4E && img[3] === 0x47;
+                    const isJPEG = img[0] === 0xFF && img[1] === 0xD8 && img[2] === 0xFF;
+                    if (!isPNG && !isJPEG) {
+                      throw new Error(`스크린샷 ${idx + 1}이 올바른 이미지 형식이 아닙니다. 버퍼 시작 (hex): ${img.slice(0, 20).toString('hex')} (길이: ${img.length} bytes)`);
+                    }
+                    
+                    try {
+                      const metadata = await sharp(img).metadata();
+                      return {
+                        width: metadata.width || 0,
+                        height: metadata.height || 0,
+                      };
+                    } catch (error) {
+                      throw new Error(`스크린샷 ${idx + 1}의 메타데이터를 읽을 수 없습니다: ${error instanceof Error ? error.message : String(error)}`);
+                    }
                   })
                 );
                 
@@ -810,15 +890,58 @@ export async function POST(request: NextRequest) {
                   }
                 }
                 
-                originalScreenshot = (await composite
-                  .composite(compositeInputs)
-                  .toBuffer()) as Buffer;
+                // compositeInputs 검증
+                if (compositeInputs.length === 0) {
+                  throw new Error('스티칭할 이미지가 없습니다.');
+                }
                 
-                console.log(`이미지 스티칭 완료: ${maxWidth}x${totalHeight}px`);
+                console.log(`composite 입력: ${compositeInputs.length}개 이미지, 캔버스 크기: ${maxWidth}x${totalHeight}px`);
+                
+                // composite 작업 수행 및 포맷 명시
+                try {
+                  const compositeResult = composite.composite(compositeInputs);
+                  
+                  // 포맷 명시하여 버퍼 생성 (imageType에 따라)
+                  if (imageType === 'png') {
+                    originalScreenshot = (await compositeResult.png().toBuffer()) as Buffer;
+                  } else {
+                    originalScreenshot = (await compositeResult.jpeg({ quality }).toBuffer()) as Buffer;
+                  }
+                  
+                  console.log(`composite 완료: ${originalScreenshot.length} bytes 생성됨`);
+                } catch (error) {
+                  console.error('composite 에러 상세:', error);
+                  throw new Error(`이미지 스티칭 실패: ${error instanceof Error ? error.message : String(error)}`);
+                }
+                
+                // 스티칭 결과 검증
+                if (!originalScreenshot || originalScreenshot.length === 0) {
+                  throw new Error('스티칭 결과가 비어있습니다.');
+                }
+                
+                // 이미지 형식 검증 (PNG/JPEG 시그니처)
+                const isPNG = originalScreenshot[0] === 0x89 && originalScreenshot[1] === 0x50 && originalScreenshot[2] === 0x4E && originalScreenshot[3] === 0x47;
+                const isJPEG = originalScreenshot[0] === 0xFF && originalScreenshot[1] === 0xD8 && originalScreenshot[2] === 0xFF;
+                if (!isPNG && !isJPEG) {
+                  // 버퍼의 첫 100바이트를 hex로 출력하여 디버깅
+                  const preview = originalScreenshot.slice(0, Math.min(100, originalScreenshot.length));
+                  throw new Error(`스티칭 결과가 올바른 이미지 형식이 아닙니다. 버퍼 시작 (hex): ${preview.toString('hex')} (길이: ${originalScreenshot.length} bytes, 예상: PNG 또는 JPEG)`);
+                }
+                
+                console.log(`이미지 스티칭 완료: ${maxWidth}x${totalHeight}px (${originalScreenshot.length} bytes, ${isPNG ? 'PNG' : 'JPEG'})`);
               } else {
-                throw new Error('스티칭 캡처 실패: 캡처된 이미지가 없습니다.');
+                // 스크린샷이 0개인 경우 단일 캡처로 폴백
+                console.warn(`⚠️ 스티칭 중단: 스크린샷 0개 → 단일 캡처로 폴백`);
+                // 아래 단일 캡처 로직으로 진행
+                originalScreenshot = null; // 명시적으로 null로 설정하여 단일 캡처 로직 실행
               }
-            } else {
+            }
+            
+            // 스티칭이 완료되지 않았거나 스크롤 불가능한 경우 단일 캡처로 폴백
+            if (!originalScreenshot) {
+              // ✅ 스크롤 불가능 또는 스티칭 불필요 → 단일 캡처로 폴백
+              console.log(`단일 캡처 방식 사용 (스크롤 불가능 또는 스티칭 불필요)`);
+              
               // ✅ 일반 캡처: viewport 조정 후 전체 요소 캡처
               const currentViewport = page.viewport();
               const requiredHeight = elementInfo.scrollHeight + 200; // 여유 공간
@@ -902,15 +1025,38 @@ export async function POST(request: NextRequest) {
 
       // ✅ 5️⃣ 최종 출력물은 가로 800px로 리사이징 (sharp 사용)
       const resizeTime = Date.now();
-      let img = sharp(originalScreenshot).resize({ 
-        width: outputWidth, 
-        withoutEnlargement: true 
-      });
+      
+      // originalScreenshot 검증
+      if (!originalScreenshot || originalScreenshot.length === 0) {
+        throw new Error('리사이즈할 이미지 버퍼가 비어있습니다.');
+      }
+      
+      // 이미지 형식 검증
+      const isPNG = originalScreenshot[0] === 0x89 && originalScreenshot[1] === 0x50 && originalScreenshot[2] === 0x4E && originalScreenshot[3] === 0x47;
+      const isJPEG = originalScreenshot[0] === 0xFF && originalScreenshot[1] === 0xD8 && originalScreenshot[2] === 0xFF;
+      if (!isPNG && !isJPEG) {
+        throw new Error(`리사이즈할 이미지가 올바른 형식이 아닙니다. 버퍼 시작 (hex): ${originalScreenshot.slice(0, 20).toString('hex')} (길이: ${originalScreenshot.length} bytes)`);
+      }
+      
+      let img: sharp.Sharp;
+      try {
+        img = sharp(originalScreenshot).resize({ 
+          width: outputWidth, 
+          withoutEnlargement: true 
+        });
+      } catch (error) {
+        throw new Error(`sharp 리사이즈 초기화 실패: ${error instanceof Error ? error.message : String(error)}. 이미지 버퍼 길이: ${originalScreenshot.length} bytes`);
+      }
 
       // ✅ (방법 B) sharp로 이미지 후처리: 좌우 패딩 추가 (기본 방식, 리사이즈 후 적용)
       if (!useCssPadding && padding > 0) {
         // 리사이즈된 이미지의 메타데이터 가져오기
-        const metadata = await img.metadata();
+        let metadata;
+        try {
+          metadata = await img.metadata();
+        } catch (error) {
+          throw new Error(`리사이즈된 이미지 메타데이터 읽기 실패: ${error instanceof Error ? error.message : String(error)}`);
+        }
         const currentWidth = metadata.width || outputWidth;
         const currentHeight = metadata.height || 0;
         
