@@ -1,17 +1,17 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Stepper } from "../../components/Stepper";
 import { ConfirmModal } from "../../components/ConfirmModal";
 
 function getStepFromPathname(pathname: string): number {
-  // expects /1, /2, /3, /4 (and / treated as 1)
+  // expects /1, /2, /3, /4, /5 (and / treated as 1)
   if (pathname === "/") return 1;
   const match = pathname.match(/^\/(\d+)(\/|$)/);
   if (!match) return 1;
   const n = Number(match[1]);
-  if (Number.isFinite(n) && n >= 1 && n <= 4) return n;
+  if (Number.isFinite(n) && n >= 1 && n <= 5) return n;
   return 1;
 }
 
@@ -50,6 +50,30 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     setPendingStep(null);
   };
 
+  // pathname 변경 시 스크롤을 상단으로 리셋
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    // 즉시 스크롤 리셋
+    const mainElement = document.querySelector("main");
+    if (mainElement) {
+      mainElement.scrollTop = 0;
+    }
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    
+    // 추가로 약간의 지연 후에도 리셋 (레이아웃 변경 대응)
+    const timeoutId = setTimeout(() => {
+      if (mainElement) {
+        mainElement.scrollTop = 0;
+      }
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [pathname]);
+
   // 헤더는 항상 먼저 렌더링
   return (
     <div className="flex h-[calc(100vh/var(--ui-scale))] flex-col overflow-hidden bg-transparent font-sans text-slate-900">
@@ -76,9 +100,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   "1단계\n학교 정보 입력",
                   "2단계\n우리학교 현황 입력",
                   "3단계\n우리학교 탄소중립 실천 현황",
-                  "4단계\n우리학교 실천 과제 선정",
+                  "4단계\n우리학교 실천계획 수립",
                 ]}
-                currentStep={currentStep}
+                currentStep={currentStep <= 4 ? currentStep : 4}
                 onStepClick={handleStepClick}
               />
             </div>

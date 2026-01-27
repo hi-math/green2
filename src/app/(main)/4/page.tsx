@@ -7,7 +7,7 @@ export default function Page4() {
   return (
     <div className="pt-6">
       <PageHeader 
-        title="우리학교 실천 과제 선정" 
+        title="우리학교 실천계획 수립" 
         showIntro={true}
         introText={`우리학교 탄소중립 실천 과제를 선정하고 실천 계획을 세워 보세요.
 

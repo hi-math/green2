@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import type { ApexOptions } from "apexcharts";
 import { SemiShareGauge } from "./Step3Overview";
@@ -12,6 +13,7 @@ const ReactApexChart = dynamic(
 
 const STEP1_STORAGE_KEY = "carbonapp.step1";
 const STEP2_STORAGE_KEY = "carbonapp.step2";
+const STEP4_STORAGE_KEY = "carbonapp.step4";
 
 type Step1Snapshot = {
   basic?: {
@@ -57,6 +59,14 @@ const getCategoryBorderColor = (category: string) => {
   if (category === EXTRA_CATEGORY)
     return "border-[color:rgba(105,90,170,0.2)] hover:border-[color:rgba(105,90,170,0.45)]";
   return "border-[color:rgba(75,70,41,0.2)] hover:border-[color:rgba(75,70,41,0.4)]";
+};
+
+const getCategoryTextColor = (category: string) => {
+  if (category === "실천 행동의 일상화") return "text-[color:rgb(107,68,35)]";
+  if (category === "실천 문화 확산") return "text-[color:rgb(201,125,96)]";
+  if (category === "학교 환경 조성") return "text-[color:rgb(168,192,154)]";
+  if (category === EXTRA_CATEGORY) return "text-[color:rgb(105,90,170)]";
+  return "text-[color:rgba(75,70,41,0.85)]";
 };
 
 const getCategoryDot = (category: string) => {
@@ -143,15 +153,24 @@ function groupByCategory(items: TaskItem[], order: string[]) {
 }
 
 export function Step4TaskSelection() {
+  const router = useRouter();
   const [leftItems, setLeftItems] = useState<TaskItem[]>([]);
   const [rightItems, setRightItems] = useState<TaskItem[]>([]);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [isDragOverDropZone, setIsDragOverDropZone] = useState(false);
   const dragItemRef = useRef<string | null>(null);
+  
+  const [alertModal, setAlertModal] = useState<{ show: boolean; message: string }>({
+    show: false,
+    message: "",
+  });
 
   const detailDragIndexRef = useRef<number | null>(null);
+  const detailDragOverIndexRef = useRef<number | null>(null);
+  const lastSwapPairRef = useRef<{ active: number; over: number } | null>(null);
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [detailDraggingIndex, setDetailDraggingIndex] = useState<number | null>(null);
+  const [detailDragOverIndex, setDetailDragOverIndex] = useState<number | null>(null);
   const [detailEditingIndex, setDetailEditingIndex] = useState<number | null>(null);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -432,12 +451,16 @@ export function Step4TaskSelection() {
 
     setRightItems((prev) => {
       if (prev.some((it) => it.id === itemId)) return prev;
-      const newItems = [...prev, item];
-      return newItems.sort((a, b) => {
-        const indexA = ALL_ITEMS.findIndex((it) => it.id === a.id);
-        const indexB = ALL_ITEMS.findIndex((it) => it.id === b.id);
-        return indexA - indexB;
-      });
+      // 드래그한 순서대로 오른쪽에 추가 (늦게 들어온 카드가 오른쪽에)
+      return [...prev, item];
+    });
+
+    // 세부 실천과제 입력창 초기화
+    setItemInputs((prev) => {
+      if (!prev[itemId]) {
+        return { ...prev, [itemId]: [""] };
+      }
+      return prev;
     });
 
     setLeftItems((prev) => prev.filter((it) => it.id !== itemId));
@@ -540,6 +563,10 @@ export function Step4TaskSelection() {
     };
 
     setExtraTasks((prev) => [...prev, newTask]);
+    
+    // 세부 실천과제 입력창 초기화
+    setItemInputs((prev) => ({ ...prev, [newTask.id]: [""] }));
+    
     setExtraTaskInput("");
   };
 
@@ -576,11 +603,62 @@ export function Step4TaskSelection() {
     }
   };
 
-  const handleDetailDrop = (targetIndex: number) => {
-    if (!selectedItemId) return;
-    const sourceIndex = detailDragIndexRef.current;
-    if (sourceIndex === null || sourceIndex === targetIndex) return;
+  // 경계선 기준 swap 판단 함수
+  const shouldSwapByBoundary = (
+    activeIndex: number,
+    overIndex: number,
+    pointerY: number,
+    overRect: { top: number; bottom: number }
+  ): boolean => {
+    if (activeIndex > overIndex) {
+      // 위로 드래그: 3 -> 2
+      const boundaryY = overRect.bottom; // 2/3 경계
+      return pointerY < boundaryY - 4; // 데드존 4px
+    }
+    if (activeIndex < overIndex) {
+      // 아래로 드래그: 2 -> 3
+      const boundaryY = overRect.top; // 2/3 경계
+      return pointerY > boundaryY + 4; // 데드존 4px
+    }
+    return false;
+  };
 
+  const handleDetailDragEnter = (targetIndex: number, e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDetailDragOver = (targetIndex: number, e: React.DragEvent) => {
+    e.preventDefault();
+    if (!selectedItemId) return;
+    
+    const sourceIndex = detailDragIndexRef.current;
+    if (sourceIndex === null || sourceIndex === targetIndex) {
+      if (detailDragOverIndexRef.current !== null) {
+        detailDragOverIndexRef.current = null;
+        setDetailDragOverIndex(null);
+      }
+      return;
+    }
+
+    // 마우스 포인터 Y 좌표 가져오기
+    const pointerY = e.clientY;
+    
+    // 타겟 요소의 위치 정보 가져오기
+    const targetElement = e.currentTarget as HTMLElement;
+    const overRect = targetElement.getBoundingClientRect();
+
+    // 경계선 기준 swap 조건 확인
+    if (!shouldSwapByBoundary(sourceIndex, targetIndex, pointerY, overRect)) {
+      return;
+    }
+
+    // 연속 swap 방지: 마지막 swap 쌍과 같으면 무시
+    if (lastSwapPairRef.current?.active === sourceIndex && lastSwapPairRef.current?.over === targetIndex) {
+      return;
+    }
+
+    // swap 실행
     setItemInputs((prev) => {
       const inputs = prev[selectedItemId] || [];
       if (sourceIndex < 0 || sourceIndex >= inputs.length) return prev;
@@ -590,15 +668,35 @@ export function Step4TaskSelection() {
       const [moved] = nextInputs.splice(sourceIndex, 1);
       nextInputs.splice(targetIndex, 0, moved);
 
+      // 마지막 swap 쌍 저장
+      lastSwapPairRef.current = { active: sourceIndex, over: targetIndex };
+      
+      // 드래그 인덱스 업데이트 (swap 후 새로운 위치)
+      detailDragIndexRef.current = targetIndex;
+      setDetailDraggingIndex(targetIndex);
+
       return { ...prev, [selectedItemId]: nextInputs };
     });
 
+    // 시각적 피드백을 위한 상태 업데이트
+    detailDragOverIndexRef.current = targetIndex;
+    setDetailDragOverIndex(targetIndex);
+  };
+
+  const handleDetailDrop = (targetIndex: number) => {
+    // 드래그 오버 중 이미 swap이 발생했으므로 드롭 시에는 정리만 수행
     detailDragIndexRef.current = null;
+    detailDragOverIndexRef.current = null;
+    lastSwapPairRef.current = null;
+    setDetailDragOverIndex(null);
     setDetailDraggingIndex(null);
   };
 
   const handleDetailDragEnd = () => {
     detailDragIndexRef.current = null;
+    detailDragOverIndexRef.current = null;
+    lastSwapPairRef.current = null;
+    setDetailDragOverIndex(null);
     setDetailDraggingIndex(null);
   };
 
@@ -614,6 +712,52 @@ export function Step4TaskSelection() {
   };
 
   // selectedItemId 변경 시 detailEditingIndex는 handleRightItemClick에서 설정하므로 여기서는 리셋하지 않음
+
+  const saveStep4Data = () => {
+    if (typeof window === "undefined") return;
+    try {
+      const data = {
+        rightItems,
+        extraTasks,
+        itemInputs,
+        reductionPercent,
+      };
+      sessionStorage.setItem(STEP4_STORAGE_KEY, JSON.stringify(data));
+    } catch (error) {
+      console.error("Error saving step4 data:", error);
+    }
+  };
+
+  const validateAndNext = () => {
+    const allTasks = [...rightItems, ...extraTasks];
+    
+    // 검증 1: 우리학교 실천과제가 추가되었는지 확인
+    if (allTasks.length === 0) {
+      setAlertModal({
+        show: true,
+        message: "실천과제가 추가되지 않았습니다.",
+      });
+      return;
+    }
+    
+    // 검증 2: 세부실천과제가 입력되지 않은 과제가 있는지 확인
+    const tasksWithoutDetails = allTasks.filter((task) => {
+      const inputs = itemInputs[task.id] || [];
+      return !inputs.some((input) => input.trim().length > 0);
+    });
+    
+    if (tasksWithoutDetails.length > 0) {
+      setAlertModal({
+        show: true,
+        message: "세부 실천과제가 입력되지 않은 과제가 있습니다.",
+      });
+      return;
+    }
+    
+    // 데이터 저장 후 다음 페이지로 이동
+    saveStep4Data();
+    router.push("/5");
+  };
 
 
   return (
@@ -743,429 +887,307 @@ export function Step4TaskSelection() {
         </div>
       </div>
 
-      {/* 3층: 우리학교 실천과제 + 세부 실천과제 */}
-      <div className="grid grid-cols-[3fr_1fr] gap-3">
-        <div
-          className={`rounded-2xl border-2 bg-white/70 shadow-sm backdrop-blur flex flex-col transition-all duration-200 ${
-            isDragOverDropZone
-              ? "border-[color:rgba(75,70,41,0.35)] bg-[color:rgba(75,70,41,0.03)] shadow-md"
-              : "border-slate-200"
-          }`}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnterDropZone}
-          onDragLeave={handleDragLeaveDropZone}
-          onDrop={handleDrop}
-        >
-          <h3 className="px-4 pt-4 pb-3 text-sm font-extrabold text-[var(--brand-b)]">우리학교 실천과제</h3>
+      {/* 3층: 우리학교 실천과제 */}
+      <div
+        className={`rounded-2xl border-2 bg-white/70 shadow-sm backdrop-blur flex flex-col transition-all duration-200 ${
+          isDragOverDropZone
+            ? "border-[color:rgba(75,70,41,0.35)] bg-[color:rgba(75,70,41,0.03)] shadow-md"
+            : "border-slate-200"
+        }`}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnterDropZone}
+        onDragLeave={handleDragLeaveDropZone}
+        onDrop={handleDrop}
+      >
+        <div className="px-4 pt-4 pb-3">
+          <h3 className="text-sm font-extrabold text-[var(--brand-b)]">우리학교 실천과제</h3>
+        </div>
 
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
-            {rightItems.length === 0 && (
-              <div className="text-xs text-[color:rgba(75,70,41,0.5)] text-center py-6 border-2 border-dashed border-slate-200 rounded-lg mb-4">
-                추천과제를 드래그하여 여기에 놓으세요.
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-[0.8fr_1fr_1.4fr] gap-1">
-                {groupByCategory(rightItems, CATEGORY_ORDER).map((group) => (
-                  <div key={group.category} className="space-y-2 p-2">
-                    <div className="text-[10px] font-semibold text-[color:rgba(75,70,41,0.7)]">
-                      {group.category}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {group.items.map((item) => {
-                        const isActive = selectedItemId === item.id;
-                        const hasDetails = hasDetailInputs(item.id);
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={(e) => handleRightItemClick(item.id, e)}
-                            className={`relative inline-flex cursor-pointer items-center rounded-2xl border ${getCategoryBorderColor(
-                              item.category,
-                            )} ${getCategoryColor(item.category)} px-2.5 py-1.5 text-[10px] font-semibold text-[color:rgba(75,70,41,0.85)] shadow-sm transition-all hover:shadow-lg hover:scale-105 whitespace-nowrap ${
-                              isActive ? "ring-1 ring-[var(--brand-b)]" : ""
-                            } ${hasDetails ? "border-[color:rgba(75,70,41,0.45)]" : ""}`}
-                            style={{
-                              boxShadow:
-                                "0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 0 rgba(0, 0, 0, 0.1)",
-                            }}
-                          >
-                            {hasDetails && (
-                              <img src="/icons/checkmark.svg" alt="" className="mr-1 h-3 w-3" />
-                            )}
-                            {item.label}
-                            <button
-                              type="button"
-                              onClick={(e) => handleRemoveFromRight(item.id, e)}
-                              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/70 text-[10px] text-[color:rgba(75,70,41,0.7)] opacity-70 hover:opacity-100 hover:bg-white"
-                              aria-label="과제 삭제"
-                            >
-                              ×
-                            </button>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* 학교추가과제 */}
-              <div className="space-y-2">
-                <div className="text-[10px] font-semibold text-[color:rgba(75,70,41,0.7)]">학교추가과제</div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={extraTaskInput}
-                    onChange={(e) => setExtraTaskInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddExtraTask();
-                      }
-                    }}
-                    placeholder="과제 입력"
-                    className={`w-40 rounded-2xl border ${getCategoryBorderColor(
-                      EXTRA_CATEGORY,
-                    )} ${getCategoryColor(EXTRA_CATEGORY)} px-2.5 py-1.5 text-[10px] font-semibold text-[color:rgba(75,70,41,0.85)] placeholder:text-[color:rgba(75,70,41,0.5)] focus:border-[var(--brand-b)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-b)]/20`}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddExtraTask}
-                    className={`rounded-2xl border ${getCategoryBorderColor(
-                      EXTRA_CATEGORY,
-                    )} ${getCategoryColor(EXTRA_CATEGORY)} px-2.5 py-1.5 text-[10px] font-semibold text-[color:rgba(75,70,41,0.85)] shadow-sm hover:shadow-lg cursor-pointer`}
-                  >
-                    추가
-                  </button>
+        <div className="flex-1 overflow-x-auto px-4 pb-4">
+          {rightItems.length === 0 && extraTasks.length === 0 ? (
+            <div className="text-xs text-[color:rgba(75,70,41,0.5)] text-center py-12 border-2 border-dashed border-slate-200 rounded-lg">
+              추천과제를 드래그하여 여기에 놓으세요.
+            </div>
+          ) : (
+            <div className="min-w-full inline-block">
+              {/* 카드 구조 */}
+              <div className="flex gap-2">
+                {/* 왼쪽 라벨 영역 */}
+                <div className="flex-shrink-0 w-[100px] flex flex-col pt-3">
+                  <span className="text-[11px] font-semibold text-[color:rgba(75,70,41,0.85)] mb-8">
+                    실천 과제
+                  </span>
+                  <span className="text-[11px] font-semibold text-[color:rgba(75,70,41,0.85)]">
+                    세부 실천과제
+                  </span>
                 </div>
-
-                {extraTasks.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {extraTasks.map((item) => {
-                      const isActive = selectedItemId === item.id;
-                      const hasDetails = hasDetailInputs(item.id);
-
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={(e) => handleRightItemClick(item.id, e)}
-                          className={`relative inline-flex cursor-pointer items-center rounded-2xl border ${getCategoryBorderColor(
-                            item.category,
-                          )} ${getCategoryColor(item.category)} px-2.5 py-1.5 text-[10px] font-semibold text-[color:rgba(75,70,41,0.85)] shadow-sm transition-all hover:shadow-lg hover:scale-105 whitespace-nowrap ${
-                            isActive ? "ring-1 ring-[var(--brand-b)]" : ""
-                          } ${hasDetails ? "border-[color:rgba(75,70,41,0.45)]" : ""}`}
-                          style={{
-                            boxShadow:
-                              "0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 0 rgba(0, 0, 0, 0.1)",
-                          }}
-                        >
-                          {hasDetails && (
-                            <img src="/icons/checkmark.svg" alt="" className="mr-1 h-3 w-3" />
-                          )}
-                          {item.label}
+                
+                {/* 카드들 */}
+                <div className="flex gap-2 flex-1">
+                  {[...rightItems, ...extraTasks].map((item) => {
+                    const itemInputsForItem = itemInputs[item.id] || [""];
+                    const hasSavedContent = itemInputsForItem.some((v) => v.trim().length > 0);
+                    
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex-shrink-0 w-[220px] relative"
+                      >
+                        {/* 하나의 카드 */}
+                        <div className="rounded-xl border-2 border-slate-200 bg-white shadow-sm p-3 min-h-[160px]">
+                          {/* 삭제 버튼 - 오른쪽 위 */}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleRemoveExtraTask(item.id);
+                              if (item.category === EXTRA_CATEGORY) {
+                                handleRemoveExtraTask(item.id);
+                              } else {
+                                handleRemoveFromRight(item.id, e);
+                              }
                             }}
-                            className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/70 text-[10px] text-[color:rgba(75,70,41,0.7)] opacity-70 hover:opacity-100 hover:bg-white"
-                            aria-label="학교추가과제 삭제"
+                            className="absolute top-2 right-2 text-[14px] text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)] transition-colors z-10 cursor-pointer"
+                            aria-label="과제 삭제"
                           >
                             ×
                           </button>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                          
+                          {/* 과제 텍스트 */}
+                          <div className="mb-3 pb-2.5 border-b-2 border-slate-200">
+                            <span className={`text-[13px] font-extrabold ${getCategoryTextColor(item.category)} leading-tight`}>
+                              {item.label}
+                            </span>
+                          </div>
+                          
+                          {/* 세부 실천과제 입력창 */}
+                          <div className="space-y-1.5">
+                            {itemInputsForItem.map((value, index) => {
+                              const isEmpty = value.trim().length === 0;
+                              const isEditing = detailEditingIndex === index && selectedItemId === item.id;
+                              const isDragging = detailDraggingIndex === index && selectedItemId === item.id;
+                              
+                              // 빈 입력창 필터링: 저장된 내용이 없으면 첫 번째만, 있으면 비어있고 편집 중이 아닌 것만 숨김
+                              if (!hasSavedContent && index !== 0) return null;
+                              if (hasSavedContent && isEmpty && !isEditing) return null;
+
+                              // 드래그 중인 항목은 투명도만 적용 (실제 swap은 이미 발생했으므로 위치 계산 불필요)
+
+                              return (
+                                <div
+                                  key={index}
+                                  draggable={!isEmpty}
+                                  onDragStart={isEmpty ? undefined : (e) => handleDetailDragStart(index, e)}
+                                  onDragEnd={isEmpty ? undefined : handleDetailDragEnd}
+                                  onDragEnter={isEmpty ? undefined : (e) => handleDetailDragEnter(index, e)}
+                                  onDragOver={isEmpty ? undefined : (e) => handleDetailDragOver(index, e)}
+                                  onDrop={isEmpty ? undefined : () => handleDetailDrop(index)}
+                                  className={`flex items-start gap-1.5 transition-opacity duration-200 ${
+                                    isDragging ? "opacity-50" : "opacity-100"
+                                  }`}
+                                >
+                                  {!isEmpty && (
+                                    <span 
+                                      className="text-[9px] text-[color:rgba(75,70,41,0.55)] cursor-move select-none mt-0.5"
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                    >
+                                      ⋮⋮
+                                    </span>
+                                  )}
+                                  
+                                  <span
+                                    className="h-0.5 w-0.5 rounded-full shrink-0 self-center"
+                                    style={{ backgroundColor: getCategoryDot(item.category) }}
+                                  />
+
+                                  {isEditing || (!hasSavedContent && index === 0 && selectedItemId === item.id) ? (
+                                    <textarea
+                                      id={`detail-input-${item.id}-${index}`}
+                                      className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-1.5 py-1 text-[11px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
+                                      rows={1}
+                                      value={value}
+                                      placeholder="입력하세요"
+                                      onChange={(e) => {
+                                        handleInputChange(item.id, index, e.target.value);
+                                        setDetailEditingIndex(index);
+                                        const el = e.currentTarget;
+                                        el.style.height = "auto";
+                                        el.style.height = `${el.scrollHeight}px`;
+                                      }}
+                                      onFocus={() => {
+                                        if (blurTimeoutRef.current) {
+                                          clearTimeout(blurTimeoutRef.current);
+                                          blurTimeoutRef.current = null;
+                                        }
+                                        setDetailEditingIndex(index);
+                                        setSelectedItemId(item.id);
+                                      }}
+                                      onBlur={() => {
+                                        blurTimeoutRef.current = setTimeout(() => {
+                                          setDetailEditingIndex(null);
+                                        }, 150);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" && !e.shiftKey) {
+                                          e.preventDefault();
+                                          if (blurTimeoutRef.current) {
+                                            clearTimeout(blurTimeoutRef.current);
+                                            blurTimeoutRef.current = null;
+                                          }
+                                          
+                                          const nextIndex = index + 1;
+                                          const hasNextTask = nextIndex < itemInputsForItem.length && itemInputsForItem[nextIndex]?.trim().length > 0;
+                                          
+                                          if (hasNextTask) {
+                                            setDetailEditingIndex(nextIndex);
+                                            setSelectedItemId(item.id);
+                                            setTimeout(() => {
+                                              const targetArea = document.getElementById(`detail-input-${item.id}-${nextIndex}`) as HTMLTextAreaElement;
+                                              if (targetArea) {
+                                                targetArea.focus();
+                                              }
+                                            }, 50);
+                                          } else {
+                                            const newIndex = itemInputsForItem.length;
+                                            setItemInputs((prev) => {
+                                              const inputs = prev[item.id] || [""];
+                                              return { ...prev, [item.id]: [...inputs, ""] };
+                                            });
+                                            setDetailEditingIndex(newIndex);
+                                            setSelectedItemId(item.id);
+                                            // 렌더링 완료 후 포커스 (id로 찾기)
+                                            setTimeout(() => {
+                                              const targetArea = document.getElementById(`detail-input-${item.id}-${newIndex}`) as HTMLTextAreaElement;
+                                              if (targetArea) {
+                                                targetArea.focus();
+                                              }
+                                            }, 100);
+                                          }
+                                        }
+                                      }}
+                                      style={{ height: "auto", minHeight: "18px" }}
+                                      autoFocus={!hasSavedContent && index === 0 && selectedItemId === item.id}
+                                    />
+                                  ) : (
+                                    <div 
+                                      className="flex-1 px-1.5 py-1 border-b border-[color:rgba(75,70,41,0.2)] text-left text-[11px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)] cursor-text" 
+                                      style={{ minHeight: "18px" }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (blurTimeoutRef.current) {
+                                          clearTimeout(blurTimeoutRef.current);
+                                          blurTimeoutRef.current = null;
+                                        }
+                                        setDetailEditingIndex(index);
+                                        setSelectedItemId(item.id);
+                                      }}
+                                    >
+                                      {value}
+                                    </div>
+                                  )}
+
+                                  {!isEmpty && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveInput(item.id, index);
+                                      }}
+                                      className="inline-flex h-3.5 w-3.5 items-center justify-center cursor-pointer text-[10px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)] shrink-0 mt-0.5"
+                                      aria-label="세부 실천과제 삭제"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            
+                            {/* 입력창 추가 버튼 */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (blurTimeoutRef.current) {
+                                  clearTimeout(blurTimeoutRef.current);
+                                  blurTimeoutRef.current = null;
+                                }
+                                
+                                const currentLength = itemInputsForItem.length;
+                                const newIndex = currentLength;
+                                
+                                handleAddInput(item.id);
+                                setDetailEditingIndex(newIndex);
+                                setSelectedItemId(item.id);
+                                
+                                setTimeout(() => {
+                                  const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
+                                  if (areas[newIndex]) {
+                                    areas[newIndex].focus();
+                                  }
+                                }, 50);
+                              }}
+                              className="flex items-center gap-1 px-0.5 py-0.5 text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)] hover:text-[var(--brand-b)] cursor-pointer transition-colors"
+                            >
+                              <img src="/icons/add.svg" alt="" className="h-2.5 w-2.5 opacity-70" />
+                              <span>과제 추가</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* 세부 실천과제 */}
-        <div className="rounded-2xl border border-slate-200 bg-white/70 shadow-sm backdrop-blur min-h-[400px] flex flex-col">
-          <h3 className="px-4 pt-4 pb-3 text-sm font-extrabold text-[var(--brand-b)] tracking-tight">
-            세부 실천과제
-          </h3>
-
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
-            {selectedItem ? (
-              <div className="space-y-4">
-                <div className="rounded-lg bg-[color:rgba(75,70,41,0.08)] px-3 py-2 mb-4">
-                  <span className="text-sm font-extrabold text-[var(--brand-b)]">{selectedItem.label}</span>
-                </div>
-
-                <div className="space-y-0">
-                  {(() => {
-                    // 저장된 내용이 있는지 확인 (trim된 상태로)
-                    // 단, 현재 편집 중인 항목은 제외 (편집 중에는 아직 저장되지 않은 것으로 간주)
-                    const savedInputs = selectedItemInputs
-                      .map((v, idx) => ({ value: v, index: idx }))
-                      .filter(({ value, index }) => value.trim().length > 0 && detailEditingIndex !== index);
-                    const hasSavedContent = savedInputs.length > 0;
-                    
-                    return (
-                      <>
-                        {selectedItemInputs.map((value, index) => {
-                          const isEmpty = value.trim().length === 0;
-                          const isEditing = detailEditingIndex === index;
-                          
-                          // 저장된 내용이 없을 때: 첫 번째 입력창만 항상 표시
-                          if (!hasSavedContent) {
-                            if (index !== 0) return null;
-                            return (
-                              <div key={index} className="flex items-center gap-2 px-1 py-1">
-                                <span
-                                  className="h-1 w-1 rounded-full"
-                                  style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
-                                />
-                                <textarea
-                                  className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
-                                  rows={1}
-                                  value={value}
-                                  placeholder="입력하세요"
-                                  onChange={(e) => {
-                                    if (detailEditingIndex !== index) {
-                                      setDetailEditingIndex(index);
-                                    }
-                                    handleInputChange(selectedItemId!, index, e.target.value);
-                                    const el = e.currentTarget;
-                                    el.style.height = "auto";
-                                    el.style.height = `${el.scrollHeight}px`;
-                                  }}
-                                  onFocus={() => {
-                                    if (blurTimeoutRef.current) {
-                                      clearTimeout(blurTimeoutRef.current);
-                                      blurTimeoutRef.current = null;
-                                    }
-                                    setDetailEditingIndex(index);
-                                  }}
-                                  onBlur={() => {
-                                    blurTimeoutRef.current = setTimeout(() => {
-                                      setDetailEditingIndex(null);
-                                    }, 150);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                      e.preventDefault();
-
-                                      if (blurTimeoutRef.current) {
-                                        clearTimeout(blurTimeoutRef.current);
-                                        blurTimeoutRef.current = null;
-                                      }
-
-                                      const nextIndex = index + 1;
-                                      const hasNextTask =
-                                        nextIndex < selectedItemInputs.length &&
-                                        selectedItemInputs[nextIndex]?.trim().length > 0;
-
-                                      if (hasNextTask) {
-                                        setDetailEditingIndex(nextIndex);
-                                        setTimeout(() => {
-                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
-                                          if (areas[nextIndex]) {
-                                            areas[nextIndex].focus();
-                                          }
-                                        }, 0);
-                                      } else {
-                                        const currentLength = selectedItemInputs.length;
-                                        const newIndex = currentLength;
-
-                                        setItemInputs((prev) => {
-                                          const inputs = prev[selectedItemId!] || [""];
-                                          return { ...prev, [selectedItemId!]: [...inputs, ""] };
-                                        });
-
-                                        setDetailEditingIndex(newIndex);
-                                        setTimeout(() => {
-                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
-                                          if (areas[newIndex]) {
-                                            areas[newIndex].focus();
-                                          }
-                                        }, 50);
-                                      }
-                                    }
-                                  }}
-                                  style={{ height: "auto", minHeight: "20px" }}
-                                />
-                              </div>
-                            );
-                          }
-                          
-                          // 저장된 내용이 있을 때: 비어있고 편집 중이 아니면 숨김
-                          if (isEmpty && !isEditing) return null;
-
-                          return (
-                            <div
-                              key={index}
-                              draggable={!isEmpty}
-                              onDragStart={isEmpty ? undefined : (e) => handleDetailDragStart(index, e)}
-                              onDragEnd={isEmpty ? undefined : handleDetailDragEnd}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDrop={isEmpty ? undefined : () => handleDetailDrop(index)}
-                              className={`flex items-center gap-2 px-1 py-1 transition-opacity ${
-                                detailDraggingIndex === index ? "opacity-50" : "opacity-100"
-                              }`}
-                            >
-                              {!isEmpty && (
-                                <span 
-                                  className="text-[10px] text-[color:rgba(75,70,41,0.55)] cursor-move select-none"
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                >
-                                  ⋮⋮
-                                </span>
-                              )}
-                              
-                              <span
-                                className="h-1 w-1 rounded-full"
-                                style={{ backgroundColor: getCategoryDot(selectedItem.category) }}
-                              />
-
-                              {detailEditingIndex === index ? (
-                                <textarea
-                                  className="detail-input flex-1 border-0 border-b-2 border-slate-300 px-3 py-2 text-[13px] font-normal text-[color:rgba(75,70,41,0.8)] focus:border-b-[var(--brand-b)] focus:outline-none resize-none overflow-hidden leading-relaxed whitespace-pre-wrap"
-                                  rows={1}
-                                  value={value}
-                                  placeholder="입력하세요"
-                                  onChange={(e) => {
-                                    handleInputChange(selectedItemId!, index, e.target.value);
-                                    const el = e.currentTarget;
-                                    el.style.height = "auto";
-                                    el.style.height = `${el.scrollHeight}px`;
-                                  }}
-                                  onBlur={() => {
-                                    blurTimeoutRef.current = setTimeout(() => {
-                                      setDetailEditingIndex(null);
-                                    }, 150);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                      e.preventDefault();
-                                      
-                                      // blur 타이머 취소
-                                      if (blurTimeoutRef.current) {
-                                        clearTimeout(blurTimeoutRef.current);
-                                        blurTimeoutRef.current = null;
-                                      }
-                                      
-                                      const nextIndex = index + 1;
-                                      
-                                      // 다음 과제가 있는지 확인 (비어있지 않은 항목)
-                                      const hasNextTask = nextIndex < selectedItemInputs.length && 
-                                        selectedItemInputs[nextIndex]?.trim().length > 0;
-                                      
-                                      if (hasNextTask) {
-                                        // 다음 과제가 있으면 다음 과제 수정모드 활성화
-                                        setDetailEditingIndex(nextIndex);
-                                        setTimeout(() => {
-                                          if (blurTimeoutRef.current) {
-                                            clearTimeout(blurTimeoutRef.current);
-                                            blurTimeoutRef.current = null;
-                                          }
-                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
-                                          if (areas[nextIndex]) {
-                                            areas[nextIndex].focus();
-                                          }
-                                        }, 0);
-                                      } else {
-                                        // 다음 과제가 없으면 새 입력란 생성
-                                        const currentLength = selectedItemInputs.length;
-                                        const newIndex = currentLength;
-                                        
-                                        setItemInputs((prev) => {
-                                          const inputs = prev[selectedItemId!] || [""];
-                                          return { ...prev, [selectedItemId!]: [...inputs, ""] };
-                                        });
-                                        
-                                        // 상태 업데이트 후 인덱스 설정
-                                        setDetailEditingIndex(newIndex);
-                                        setTimeout(() => {
-                                          if (blurTimeoutRef.current) {
-                                            clearTimeout(blurTimeoutRef.current);
-                                            blurTimeoutRef.current = null;
-                                          }
-                                          const areas = document.querySelectorAll<HTMLTextAreaElement>(".detail-input");
-                                          if (areas[newIndex]) {
-                                            areas[newIndex].focus();
-                                          }
-                                        }, 50);
-                                      }
-                                    }
-                                  }}
-                                  style={{ height: "auto", minHeight: "20px" }}
-                                  autoFocus
-                                />
-                              ) : (
-                                <div 
-                                  className="flex-1 px-3 py-2 border-b border-[color:rgba(75,70,41,0.2)] text-left text-[13px] font-normal leading-relaxed text-[color:rgba(75,70,41,0.85)] cursor-text" 
-                                  style={{ minHeight: "20px" }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (blurTimeoutRef.current) {
-                                      clearTimeout(blurTimeoutRef.current);
-                                      blurTimeoutRef.current = null;
-                                    }
-                                    setDetailEditingIndex(index);
-                                  }}
-                                >
-                                  {value}
-                                </div>
-                              )}
-
-                              {!isEmpty && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveInput(selectedItemId!, index);
-                                  }}
-                                  className="inline-flex h-5 w-5 items-center justify-center cursor-pointer text-[14px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
-                                  aria-label="세부 실천과제 삭제"
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                        
-                        {/* 입력창 추가 버튼 */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleAddInput(selectedItemId!);
-                            setTimeout(() => {
-                              const newIndex = selectedItemInputs.length;
-                              setDetailEditingIndex(newIndex);
-                            }, 0);
-                          }}
-                          className="flex items-center gap-1.5 px-1 py-1 text-[11px] font-semibold text-[color:rgba(75,70,41,0.7)] hover:text-[var(--brand-b)] cursor-pointer transition-colors"
-                        >
-                          <img src="/icons/add.svg" alt="" className="h-3.5 w-3.5 opacity-70" />
-                          <span>과제 추가</span>
-                        </button>
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-[color:rgba(75,70,41,0.6)]">
-                우리학교 실천과제를 선택하여 세부 실천과제를 입력하세요.
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
+      {/* 다음으로 버튼 */}
+      <div className="mt-6 flex justify-end">
+        <button
+          type="button"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
+          onClick={validateAndNext}
+        >
+          다음으로
+        </button>
+      </div>
+
+      {/* 알림 모달 */}
+      {alertModal.show && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setAlertModal({ show: false, message: "" })}
+        >
+          <div 
+            className="absolute rounded-2xl border border-slate-200 bg-white p-6 shadow-xl w-full max-w-md mx-6"
+            style={{
+              top: '30%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center text-lg font-extrabold text-[var(--brand-b)] mb-3">
+              알림
+            </div>
+            <div className="text-center text-sm text-[color:rgba(75,70,41,0.8)] mb-6">
+              {alertModal.message}
+            </div>
+            <div className="flex justify-center">
+              <button
+                type="button"
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-110 cursor-pointer"
+                onClick={() => setAlertModal({ show: false, message: "" })}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
