@@ -1,8 +1,29 @@
+/**
+ * PDF 생성 API 엔드포인트
+ * 
+ * 📌 버튼 연결 구조:
+ * 
+ * 1. Preview 버튼 (Step5Summary, /plan/preview):
+ *    - 클릭 시 → /plan/preview 페이지로 이동
+ *    - 해당 페이지에서 PDF 미리보기 UI 표시
+ *    - 필요 시 이 API를 호출하여 PDF 생성 후 브라우저에서 열기
+ * 
+ * 2. Download 버튼 (Step5Summary, DownloadPlanPdfButton, /plan/preview):
+ *    - 클릭 시 → POST /api/pdf/plan 호출
+ *    - 이 엔드포인트가 PDF 생성 후 Blob 반환
+ *    - 클라이언트에서 Blob을 다운로드 파일로 저장
+ * 
+ * 📌 PDF 설정 (최소 골격):
+ * - 용지 크기: A4
+ * - 방향: 가로 (landscape)
+ * - 여백: 상/하/좌/우 모두 20mm
+ * - 현재 단계: 빈 페이지만 생성 (확장 가능한 구조)
+ */
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
+import jsPDF from "jspdf";
 
 interface TaskItem {
   label: string;
@@ -27,440 +48,121 @@ interface PlanPayload {
   categories: CategoryData[];
 }
 
-function generateHTML(data: PlanPayload): string {
-  const { schoolName, targetPct, baselineYear, nextYear, usageValues, categories } = data;
+/**
+ * PDF 페이지 설정 상수
+ * A4 가로: 297mm x 210mm
+ * 여백: 모든 방향 20mm
+ */
+const PDF_CONFIG = {
+  format: "a4" as const,
+  orientation: "landscape" as const,
+  unit: "mm" as const,
+  margin: {
+    top: 20,
+    right: 20,
+    bottom: 20,
+    left: 20,
+  },
+} as const;
 
-  const fmt = new Intl.NumberFormat("ko-KR");
+/**
+ * 빈 PDF 생성 함수
+ * 
+ * 현재 단계에서는 완전히 빈 페이지만 생성합니다.
+ * 이후 단계에서 여기에 페이지 내용을 추가할 수 있습니다.
+ * 
+ * @param payload - PDF 생성에 필요한 데이터 (현재는 사용하지 않지만 구조 유지)
+ * @returns PDF Blob (Uint8Array)
+ */
+function generateEmptyPDF(payload: PlanPayload): Uint8Array {
+  // jsPDF 인스턴스 생성 (A4 가로, mm 단위)
+  const doc = new jsPDF({
+    orientation: PDF_CONFIG.orientation,
+    unit: PDF_CONFIG.unit,
+    format: PDF_CONFIG.format,
+  });
 
-  // 카테고리별 카드 HTML 생성
-  const categoryCards = categories.map((cat) => {
-    const itemsHtml = cat.items
-      .map((item, idx) => {
-        const detailsHtml = item.details
-          .filter((d) => d.trim())
-          .map((d) => `<li class="detail-item">${d}</li>`)
-          .join("");
+  // 페이지 크기 가져오기 (A4 가로: 297mm x 210mm)
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
 
-        return `
-          <div class="task-item">
-            <div class="task-label">
-              <span class="task-number">${idx + 1}</span>
-              ${item.label}
-            </div>
-            ${detailsHtml ? `<ul class="detail-list">${detailsHtml}</ul>` : ""}
-          </div>
-        `;
-      })
-      .join("");
+  // 여백 설정 확인용 (현재는 빈 페이지이므로 실제로는 사용하지 않음)
+  const contentWidth = pageWidth - PDF_CONFIG.margin.left - PDF_CONFIG.margin.right;
+  const contentHeight = pageHeight - PDF_CONFIG.margin.top - PDF_CONFIG.margin.bottom;
 
-    return `
-      <div class="card">
-        <div class="card-title">${cat.name}</div>
-        ${itemsHtml || '<div class="empty-msg">선택된 과제가 없습니다</div>'}
-      </div>
-    `;
-  }).join("");
+  // TODO: 이후 단계에서 여기에 페이지 내용 추가
+  // 예: doc.text("제목", PDF_CONFIG.margin.left, PDF_CONFIG.margin.top + 10);
+  // 예: doc.addPage(); // 추가 페이지 생성
 
-  // 빈 카테고리 채우기
-  const defaultCategories = ["실천 행동의 일상화", "실천 문화 확산", "학교 환경 조성"];
-  let finalCards = categoryCards;
-  if (categories.length === 0) {
-    finalCards = defaultCategories
-      .map(
-        (name) => `
-        <div class="card">
-          <div class="card-title">${name}</div>
-          <div class="empty-msg">선택된 과제가 없습니다</div>
-        </div>
-      `
-      )
-      .join("");
-  }
-
-  return `
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <title>우리학교 탄소중립 실천 계획서</title>
-  <style>
-    @page {
-      size: A4;
-      margin: 20mm;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html, body {
-      background: white;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      font-family: "NanumGothic", "Nanum Gothic", "NanumBarunGothic", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
-      font-size: 12px;
-      line-height: 1.5;
-      color: #111;
-    }
-
-    .sheet {
-      width: 170mm;
-      min-height: 257mm;
-      margin: 0 auto;
-      padding: 10mm 0;
-    }
-
-    .title {
-      text-align: center;
-      font-family: "NanumGothic", "Nanum Gothic", sans-serif;
-      font-weight: bold;
-      font-size: 22px;
-      margin: 0 0 20px 0;
-      color: #1a1a1a;
-    }
-
-    .meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-      margin-bottom: 16px;
-      padding: 12px 20px;
-      background: #f8f8f6;
-      border-radius: 8px;
-      border: 1px solid #e8e8e4;
-    }
-
-    .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .meta-label {
-      font-weight: 600;
-      color: #4B4629;
-    }
-
-    .meta-value {
-      font-weight: 700;
-      color: #111;
-    }
-
-    .chart-box {
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 20px;
-      background: #fafaf8;
-    }
-
-    .chart-title {
-      font-family: "NanumGothic", "Nanum Gothic", sans-serif;
-      font-weight: bold;
-      font-size: 14px;
-      margin-bottom: 16px;
-      color: #4B4629;
-    }
-
-    .chart-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
-    }
-
-    .chart-item {
-      text-align: center;
-    }
-
-    .chart-label {
-      font-weight: 600;
-      font-size: 12px;
-      margin-bottom: 10px;
-      color: #4B4629;
-    }
-
-    .chart-bars {
-      display: flex;
-      justify-content: center;
-      align-items: flex-end;
-      gap: 10px;
-      height: 90px;
-      margin-bottom: 10px;
-    }
-
-    .chart-bar {
-      width: 32px;
-      border-radius: 4px 4px 0 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding-top: 6px;
-      min-height: 24px;
-    }
-
-    .chart-bar.electric-baseline { background: #6B4423; }
-    .chart-bar.electric-target { background: #9A7050; }
-    .chart-bar.gas-baseline { background: #C97D60; }
-    .chart-bar.gas-target { background: #E0A893; }
-    .chart-bar.water-baseline { background: #7A9E6B; }
-    .chart-bar.water-target { background: #A8C09A; }
-
-    .bar-value {
-      font-size: 9px;
-      font-weight: 700;
-      color: white;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-    }
-
-    .chart-years {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #666;
-    }
-
-    .section-title {
-      font-family: "NanumGothic", "Nanum Gothic", sans-serif;
-      font-weight: bold;
-      font-size: 15px;
-      margin: 24px 0 14px;
-      padding-bottom: 6px;
-      border-bottom: 2px solid #4B4629;
-      color: #4B4629;
-    }
-
-    .three-cols {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1.2fr;
-      gap: 12px;
-    }
-
-    .card {
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 14px;
-      min-height: 120px;
-      background: #fff;
-    }
-
-    .card-title {
-      text-align: center;
-      font-family: "NanumGothic", "Nanum Gothic", sans-serif;
-      font-weight: bold;
-      font-size: 12px;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid #eee;
-      color: #4B4629;
-    }
-
-    .task-item {
-      margin-bottom: 12px;
-    }
-
-    .task-label {
-      font-weight: 600;
-      font-size: 11px;
-      color: #333;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: flex-start;
-      gap: 6px;
-    }
-
-    .task-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 18px;
-      height: 18px;
-      background: #4B4629;
-      color: white;
-      border-radius: 50%;
-      font-size: 10px;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-
-    .detail-list {
-      margin: 6px 0 0 24px;
-      padding: 0;
-      list-style: none;
-    }
-
-    .detail-item {
-      font-size: 10px;
-      color: #555;
-      padding: 2px 0;
-      position: relative;
-      padding-left: 14px;
-    }
-
-    .detail-item::before {
-      content: "–";
-      position: absolute;
-      left: 0;
-      color: #999;
-    }
-
-    .empty-msg {
-      text-align: center;
-      color: #999;
-      font-size: 11px;
-      padding: 24px 0;
-    }
-
-    .footer {
-      margin-top: 24px;
-      text-align: center;
-      font-size: 10px;
-      color: #999;
-    }
-  </style>
-</head>
-<body>
-  <div class="sheet">
-    <h1 class="title">우리학교 탄소중립 실천 계획서</h1>
-
-    <div class="meta">
-      <div class="meta-item">
-        <span class="meta-label">학교명:</span>
-        <span class="meta-value">${schoolName || "○○학교"}</span>
-      </div>
-      <div class="meta-item">
-        <span class="meta-label">감축 목표:</span>
-        <span class="meta-value">${targetPct}%</span>
-      </div>
-      <div class="meta-item">
-        <span class="meta-label">기준연도:</span>
-        <span class="meta-value">${baselineYear}년</span>
-      </div>
-    </div>
-
-    <div class="chart-box">
-      <div class="chart-title">탄소배출 감축 목표</div>
-      <div class="chart-grid">
-        <!-- 전기 -->
-        <div class="chart-item">
-          <div class="chart-label">전기 (kWh)</div>
-          <div class="chart-bars">
-            <div class="chart-bar electric-baseline" style="height: ${Math.min(80, Math.max(24, 80))}px;">
-              <span class="bar-value">${fmt.format(Math.round(usageValues.electric))}</span>
-            </div>
-            <div class="chart-bar electric-target" style="height: ${Math.min(80, Math.max(24, 80 * (1 - targetPct / 100)))}px;">
-              <span class="bar-value">${fmt.format(Math.round(usageValues.electric * (1 - targetPct / 100)))}</span>
-            </div>
-          </div>
-          <div class="chart-years">
-            <span>${baselineYear}</span>
-            <span>${nextYear}</span>
-          </div>
-        </div>
-
-        <!-- 가스 -->
-        <div class="chart-item">
-          <div class="chart-label">가스 (m³)</div>
-          <div class="chart-bars">
-            <div class="chart-bar gas-baseline" style="height: ${Math.min(80, Math.max(24, 72))}px;">
-              <span class="bar-value">${fmt.format(Math.round(usageValues.gas))}</span>
-            </div>
-            <div class="chart-bar gas-target" style="height: ${Math.min(80, Math.max(24, 72 * (1 - targetPct / 100)))}px;">
-              <span class="bar-value">${fmt.format(Math.round(usageValues.gas * (1 - targetPct / 100)))}</span>
-            </div>
-          </div>
-          <div class="chart-years">
-            <span>${baselineYear}</span>
-            <span>${nextYear}</span>
-          </div>
-        </div>
-
-        <!-- 물 -->
-        <div class="chart-item">
-          <div class="chart-label">물 (m³)</div>
-          <div class="chart-bars">
-            <div class="chart-bar water-baseline" style="height: ${Math.min(80, Math.max(24, 64))}px;">
-              <span class="bar-value">${fmt.format(Math.round(usageValues.water))}</span>
-            </div>
-            <div class="chart-bar water-target" style="height: ${Math.min(80, Math.max(24, 64 * (1 - targetPct / 100)))}px;">
-              <span class="bar-value">${fmt.format(Math.round(usageValues.water * (1 - targetPct / 100)))}</span>
-            </div>
-          </div>
-          <div class="chart-years">
-            <span>${baselineYear}</span>
-            <span>${nextYear}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="section-title">우리학교 실천과제</div>
-
-    <div class="three-cols">
-      ${finalCards}
-    </div>
-
-    <div class="footer">
-      ※ 본 계획서는 탄소중립 실천을 위한 학교 자체 계획서입니다.
-    </div>
-  </div>
-</body>
-</html>
-`;
+  // PDF를 Uint8Array로 변환
+  // Node.js 환경 호환: "array" 사용 (브라우저/Node.js 모두 동작)
+  const pdfOutput = doc.output("array");
+  return new Uint8Array(pdfOutput);
 }
 
+/**
+ * POST 핸들러: PDF 생성 및 반환
+ * 
+ * 📌 Preview/Download 버튼 동작:
+ * 
+ * 1. Download 버튼:
+ *    - POST /api/pdf/plan 호출 (preview 파라미터 없음)
+ *    - Content-Disposition: attachment → 파일 다운로드
+ *    - 사용 예: Step5Summary.handleDownload, DownloadPlanPdfButton
+ * 
+ * 2. Preview 버튼:
+ *    - POST /api/pdf/plan?preview=true 호출
+ *    - Content-Disposition: inline → 브라우저에서 PDF 열기
+ *    - 사용 예: /plan/preview 페이지에서 호출
+ * 
+ * 현재는 빈 PDF만 생성하지만, 확장 가능한 구조로 작성되었습니다.
+ */
 export async function POST(request: Request) {
   try {
+    // 요청 본문에서 데이터 추출
     const payload = (await request.json()) as PlanPayload;
 
-    const html = generateHTML(payload);
+    // URL에서 preview 파라미터 확인
+    const url = new URL(request.url);
+    const isPreview = url.searchParams.get("preview") === "true";
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
-    });
+    // 빈 PDF 생성 (현재 단계)
+    const pdfBuffer = generateEmptyPDF(payload);
 
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: {
-        top: "20mm",
-        right: "20mm",
-        bottom: "20mm",
-        left: "20mm",
-      },
-    });
-
-    await browser.close();
-
+    // 파일명 생성
     const schoolName = payload.schoolName || "학교";
     const filename = `탄소중립_실천계획서_${schoolName}.pdf`;
     const encodedFilename = encodeURIComponent(filename);
 
-    // Uint8Array를 Buffer로 변환하여 Response 타입 이슈 해결
+    // Buffer로 변환 (Node.js 환경 호환)
     const buffer = Buffer.from(pdfBuffer);
 
+    // Preview 모드에 따라 Content-Disposition 설정
+    // inline: 브라우저에서 PDF 열기 (Preview)
+    // attachment: 파일 다운로드 (Download)
+    const contentDisposition = isPreview
+      ? `inline; filename*=UTF-8''${encodedFilename}`
+      : `attachment; filename*=UTF-8''${encodedFilename}`;
+
+    // PDF 응답 반환
     return new Response(buffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodedFilename}`,
+        "Content-Disposition": contentDisposition,
         "Cache-Control": "no-store",
       },
     });
   } catch (error) {
     console.error("PDF generation error:", error);
-    return new Response(JSON.stringify({ error: "PDF 생성 중 오류가 발생했습니다." }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ 
+        error: "PDF 생성 중 오류가 발생했습니다.",
+        details: error instanceof Error ? error.message : String(error),
+      }), 
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 }
