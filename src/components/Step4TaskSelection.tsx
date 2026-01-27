@@ -610,7 +610,8 @@ export function Step4TaskSelection() {
       category: "새 과제",
     };
 
-    setExtraTasks((prev) => [newTask, ...prev]);
+    // 새 카드를 입력 인터페이스 왼쪽에 추가 (입력 인터페이스 오른쪽에 보이도록)
+    setExtraTasks((prev) => [...prev, newTask]);
     setItemInputs((prev) => ({ ...prev, [newTask.id]: [""] }));
     setIsAddingNewTask(false);
     setNewTaskTitle("");
@@ -951,7 +952,7 @@ export function Step4TaskSelection() {
                 추천과제를 드래그하여 여기에 놓으세요.
               </div>
               
-              {/* 새 카드 입력 인터페이스 (항상 맨 오른쪽) */}
+              {/* 새 카드 입력 인터페이스 (타이틀 입력 중일 때) */}
               {isAddingNewTask && (
                 <div className="flex-shrink-0 w-[220px] relative">
                   <div className="group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col">
@@ -993,22 +994,20 @@ export function Step4TaskSelection() {
                 </div>
               )}
               
-              {/* 새 카드 추가 버튼 (입력 인터페이스가 없을 때만 표시) */}
-              {!isAddingNewTask && (
-                <div className="flex-shrink-0 w-[220px] flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={handleAddNewTask}
-                    className="w-full h-[160px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-100/50 hover:border-slate-400 transition-colors flex items-center justify-center"
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
-                        <span className="text-2xl text-slate-500">+</span>
-                      </div>
+              {/* 새 카드 추가 버튼 (항상 표시) */}
+              <div className="flex-shrink-0 w-[220px] flex items-start">
+                <button
+                  type="button"
+                  onClick={handleAddNewTask}
+                  className="w-full h-[160px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-100/50 hover:border-slate-400 transition-colors flex items-center justify-center"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                      <span className="text-2xl text-slate-500">+</span>
                     </div>
-                  </button>
-                </div>
-              )}
+                  </div>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="min-w-full inline-block">
@@ -1254,7 +1253,7 @@ export function Step4TaskSelection() {
                     );
                   })}
                   
-                  {/* 새 카드 입력 인터페이스 (항상 맨 오른쪽) */}
+                  {/* 새 카드 입력 인터페이스 (타이틀 입력 중일 때) */}
                   {isAddingNewTask && (
                     <div className="flex-shrink-0 w-[220px] relative">
                       <div className="group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col">
@@ -1296,22 +1295,20 @@ export function Step4TaskSelection() {
                     </div>
                   )}
                   
-                  {/* 새 카드 추가 버튼 (입력 인터페이스가 없을 때만 표시) */}
-                  {!isAddingNewTask && (
-                    <div className="flex-shrink-0 w-[220px] flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={handleAddNewTask}
-                        className="w-full h-[160px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-100/50 hover:border-slate-400 transition-colors flex items-center justify-center"
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
-                            <span className="text-2xl text-slate-500">+</span>
-                          </div>
+                  {/* 새 카드 추가 버튼 (항상 표시) */}
+                  <div className="flex-shrink-0 w-[220px] flex items-start">
+                    <button
+                      type="button"
+                      onClick={handleAddNewTask}
+                      className="w-full h-[160px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-100/50 hover:border-slate-400 transition-colors flex items-center justify-center"
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                          <span className="text-2xl text-slate-500">+</span>
                         </div>
-                      </button>
-                    </div>
-                  )}
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
