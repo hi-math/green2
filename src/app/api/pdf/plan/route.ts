@@ -170,13 +170,12 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       deviceScaleFactor,
     });
 
-    // 디버깅: 네트워크 응답 로깅 (401/403/302 감지)
+    // 디버깅: 네트워크 응답 로깅 (300 이상 리다이렉트/에러 감지)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     page.on("response", (res: any) => {
       const status = res.status();
-      const url = res.url();
-      if (status >= 400 || status === 302) {
-        console.log("RES:", status, url);
+      if (status >= 300) {
+        console.log("RES:", status, res.url());
       }
     });
 
@@ -215,137 +214,171 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     const renderUrl = `${baseUrl}/pdf/cards?data=${dataParam}&screenshot=1`;
     console.log("렌더링 URL:", renderUrl);
 
-    // 페이지 로드
-    await page.goto(renderUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000,
-    });
-
-    // 필수 진단 로그: "지금 페이지가 뭐였는지" 확인
-    const landed = page.url();
-    const pageTitle = await page.title();
-    const htmlHead = (await page.content()).slice(0, 500);
+    // 재시도 로직: 네비게이션 발생 시 최대 3회 재시도
+    let screenshot: Buffer | undefined;
+    let elementSize: { width: number; height: number } | undefined;
     
-    console.log("=== 페이지 로드 후 진단 ===");
-    console.log("LANDED URL:", landed);
-    console.log("TITLE:", pageTitle);
-    console.log("HTML_HEAD:", htmlHead);
-    
-    // 스크린샷 저장 (디버깅용)
-    try {
-      await page.screenshot({ path: "/tmp/landed.png", fullPage: true });
-      console.log("스크린샷 저장: /tmp/landed.png");
-    } catch (screenshotError) {
-      console.warn("스크린샷 저장 실패:", screenshotError);
-    }
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`=== 캡처 시도 ${attempt}/3 ===`);
+        
+        // 페이지 로드
+        await page.goto(renderUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 30000,
+        });
 
-    // 원인 A 진단: 인증/리다이렉트로 다른 페이지를 보고 있는지 확인
-    if (!landed.includes("/pdf/cards") || 
-        landed.includes("vercel.com/login") || 
-        (landed.includes("/login") && !landed.includes("/pdf/cards"))) {
-      const errorMessage = `[원인 A] 캡처 URL이 인증/리다이렉트로 다른 페이지를 보고 있습니다.
+        // 필수 진단 로그: "지금 페이지가 뭐였는지" 확인
+        const landed = page.url();
+        const pageTitle = await page.title();
+        const htmlHead = (await page.content()).slice(0, 500);
+        
+        console.log("=== 페이지 로드 후 진단 ===");
+        console.log("LANDED URL:", landed);
+        console.log("TITLE:", pageTitle);
+        console.log("HTML_HEAD:", htmlHead);
+        
+        // 스크린샷 저장 (디버깅용)
+        try {
+          await page.screenshot({ path: `/tmp/landed_${attempt}.png`, fullPage: true });
+          console.log(`스크린샷 저장: /tmp/landed_${attempt}.png`);
+        } catch (screenshotError) {
+          console.warn("스크린샷 저장 실패:", screenshotError);
+        }
+
+        // 원인 A 진단: 인증/리다이렉트로 다른 페이지를 보고 있는지 확인
+        if (!landed.includes("/pdf/cards")) {
+          const errorMessage = `[원인 A] 캡처 URL이 인증/리다이렉트로 다른 페이지를 보고 있습니다.
 원인: ${renderUrl} → ${landed}
 TITLE: ${pageTitle}
 처방: /pdf/cards?screenshot=1은 무조건 공개 렌더되어야 합니다. 
 - Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하세요.
 - 또는 Production 배포(공개) 도메인에서 캡처하세요.
 - 또는 캡처 URL을 동일 서버 내부로 바꾸세요 (http://127.0.0.1:3000).`;
-      console.error(errorMessage);
-      throw new Error(errorMessage);
-    }
+          console.error(errorMessage);
+          throw new Error(errorMessage);
+        }
 
-    // 원인 B 진단: #capture-root가 페이지에 있는지 확인
-    const hasCaptureRoot = htmlHead.includes("capture-root") || 
-                          htmlHead.includes("captureRoot") ||
-                          htmlHead.includes("capture_root");
-    
-    if (!hasCaptureRoot) {
-      // HTML 전체에서 확인
-      const fullHtml = await page.content();
-      const hasCaptureRootInFull = fullHtml.includes("capture-root");
-      
-      if (!hasCaptureRootInFull) {
-        const errorMessage = `[원인 B] #capture-root id가 페이지에 없습니다.
+        // 원인 B 진단: #capture-root가 페이지에 있는지 확인
+        const hasCaptureRoot = htmlHead.includes("capture-root") || 
+                              htmlHead.includes("captureRoot") ||
+                              htmlHead.includes("capture_root");
+        
+        if (!hasCaptureRoot) {
+          // HTML 전체에서 확인
+          const fullHtml = await page.content();
+          const hasCaptureRootInFull = fullHtml.includes("capture-root");
+          
+          if (!hasCaptureRootInFull) {
+            const errorMessage = `[원인 B] #capture-root id가 페이지에 없습니다.
 LANDED URL: ${landed}
 TITLE: ${pageTitle}
 HTML_HEAD에 capture-root 문자열이 없습니다.
 처방: /pdf/cards 페이지에서 반드시 항상 <div id="capture-root">가 렌더되도록 수정하세요.
 - 조건부 렌더(데이터 없으면 return null 등) 제거
 - data 파라미터 파싱 실패해도 #capture-root만큼은 렌더되게 ("에러 UI도 capture-root 안에")`;
-        console.error(errorMessage);
-        throw new Error(errorMessage);
-      }
-    }
+            console.error(errorMessage);
+            throw new Error(errorMessage);
+          }
+        }
 
-    // 캡처 대상 요소가 준비될 때까지 대기 (원인 C 대응)
-    await page.waitForSelector("#capture-root", { visible: true, timeout: 30000 });
+        // 안전한 구간: URL 확인 후 #capture-root 대기
+        await page.waitForSelector("#capture-root", { visible: true, timeout: 30000 });
 
-    // 원인 C 대응: 폰트 로딩 + 레이아웃 안정화 대기
-    console.log("레이아웃 안정화 대기 중...");
-    await page.evaluate(async () => {
-      // 폰트 로딩 완료
-      try {
-        await (document as any).fonts?.ready;
-      } catch (e) {
-        // 폰트 API가 없거나 실패해도 계속 진행
-      }
-      
-      // 다음 프레임 2번 대기 (레이아웃 안정화)
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            resolve();
+        // URL 재확인 (네비게이션 발생 여부)
+        const afterSelectorUrl = page.url();
+        if (!afterSelectorUrl.includes("/pdf/cards")) {
+          throw new Error(`[원인 A] waitForSelector 후 URL이 변경되었습니다: ${afterSelectorUrl}`);
+        }
+
+        // 여기서부터만 evaluate 허용 (안전한 구간)
+        console.log("레이아웃 안정화 대기 중...");
+        await page.evaluate(async () => {
+          // 폰트 로딩 완료
+          try {
+            await (document as any).fonts?.ready;
+          } catch (e) {
+            // 폰트 API가 없거나 실패해도 계속 진행
+          }
+          
+          // 다음 프레임 2번 대기 (레이아웃 안정화)
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                resolve();
+              });
+            });
           });
         });
-      });
-    });
 
-    // 추가 안전 대기
-    await new Promise((r) => setTimeout(r, 300));
+        // 추가 안전 대기
+        await new Promise((r) => setTimeout(r, 300));
 
-    // 디버깅: 캡처 직전 URL 확인 (리다이렉트 재확인)
-    const beforeScreenshotUrl = page.url();
-    console.log("before screenshot url:", beforeScreenshotUrl);
-    
-    // 캡처 직전에도 로그인 페이지로 리다이렉트되었는지 재확인
-    if (beforeScreenshotUrl.includes("vercel.com/login") || (beforeScreenshotUrl.includes("/login") && !beforeScreenshotUrl.includes("/pdf/cards"))) {
-      const errorMessage = `캡처 직전에 로그인 페이지로 리다이렉트되었습니다. 
-원인: ${renderUrl} → ${beforeScreenshotUrl}
-해결: /pdf/cards는 공개 접근 가능해야 합니다. Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하거나, Production 배포(공개) 도메인에서 캡처하세요.`;
-      console.error(errorMessage);
-      throw new Error(errorMessage);
+        // 디버깅: 캡처 직전 URL 확인 (리다이렉트 재확인)
+        const beforeScreenshotUrl = page.url();
+        console.log("before screenshot url:", beforeScreenshotUrl);
+        
+        if (!beforeScreenshotUrl.includes("/pdf/cards")) {
+          throw new Error(`[원인 A] 캡처 직전에 URL이 변경되었습니다: ${beforeScreenshotUrl}`);
+        }
+
+        // 캡처된 요소의 실제 크기 가져오기 (스크린샷 전에)
+        const currentElementSize = await page.evaluate(() => {
+          const element = document.getElementById("capture-root");
+          if (!element) return { width: 1900, height: 800 };
+          const rect = element.getBoundingClientRect();
+          return {
+            width: Math.ceil(rect.width),
+            height: Math.ceil(rect.height),
+          };
+        });
+
+        console.log(`캡처 대상 요소 크기: ${currentElementSize.width}x${currentElementSize.height}`);
+
+        // 카드 높이에 맞춰 스크린샷 (요소 크기에 맞춰 clip)
+        const currentScreenshot = await page.screenshot({
+          type: "png",
+          fullPage: false,
+          clip: {
+            x: 0,
+            y: 0,
+            width: currentElementSize.width,
+            height: currentElementSize.height,
+          },
+        }) as Buffer;
+
+        // 성공 시 변수에 할당
+        elementSize = currentElementSize;
+        screenshot = currentScreenshot;
+
+        // 성공: 루프 탈출
+        console.log(`캡처 성공 (시도 ${attempt}/3)`);
+        break;
+        
+      } catch (error) {
+        console.log(`CAPTURE RETRY: 시도 ${attempt}/3 실패`, error);
+        if (attempt === 3) {
+          // 마지막 시도 실패 시 에러 throw
+          throw error;
+        }
+        // 재시도 전 짧은 대기
+        await new Promise((r) => setTimeout(r, 1000));
+      }
     }
 
-    // 캡처된 요소의 실제 크기 가져오기 (스크린샷 전에)
-    const elementSize = await page.evaluate(() => {
-      const element = document.getElementById("capture-root");
-      if (!element) return { width: 1900, height: 800 };
-      const rect = element.getBoundingClientRect();
-      return {
-        width: Math.ceil(rect.width),
-        height: Math.ceil(rect.height),
-      };
-    });
+    if (!screenshot || !elementSize) {
+      throw new Error("스크린샷 캡처 실패: 3회 재시도 후에도 성공하지 못했습니다.");
+    }
 
-    console.log(`캡처 대상 요소 크기: ${elementSize.width}x${elementSize.height}`);
-
-    // 카드 높이에 맞춰 스크린샷 (요소 크기에 맞춰 clip)
-    const screenshot = await page.screenshot({
-      type: "png",
-      fullPage: false,
-      clip: {
-        x: 0,
-        y: 0,
-        width: elementSize.width,
-        height: elementSize.height,
-      },
-    });
+    // 타입 안전성 보장 (위에서 체크했지만 TypeScript를 위해)
+    const finalScreenshot = screenshot;
+    const finalElementSize = elementSize;
 
     // 브라우저 종료
     await browser.close();
     browser = null;
 
-    console.log(`스크린샷 캡처 완료: ${screenshot.length} bytes (${Date.now() - startTime}ms)`);
+    console.log(`스크린샷 캡처 완료: ${finalScreenshot.length} bytes (${Date.now() - startTime}ms)`);
 
     // PDF 생성
     const doc = new jsPDF({
@@ -425,7 +458,7 @@ HTML_HEAD에 capture-root 문자열이 없습니다.
     const screenshotData = `data:image/png;base64,${screenshotBase64}`;
 
     // 스크린샷 이미지 비율 계산
-    const screenshotAspectRatio = elementSize.width / elementSize.height;
+    const screenshotAspectRatio = finalElementSize.width / finalElementSize.height;
     
     // 남은 공간 계산
     const remainingHeight = pageHeight - currentY; // 하단 여백 없음

@@ -48,7 +48,7 @@ function CardsContent() {
   const dataParam = searchParams.get("data");
   const isScreenshot = searchParams.get("screenshot") === "1";
 
-  // screenshot=1일 때 모든 네비게이션 방지
+  // screenshot=1일 때 모든 네비게이션/리다이렉트 절대 금지
   useEffect(() => {
     if (!isScreenshot) return;
 
@@ -71,6 +71,7 @@ function CardsContent() {
       
       const blockNavigation = () => {
         console.warn("[PDF/CARDS] Navigation blocked in screenshot mode");
+        return false;
       };
       
       history.pushState = function(...args) {
@@ -87,9 +88,18 @@ function CardsContent() {
       history.back = blockNavigation;
       history.forward = blockNavigation;
 
-      // window.location은 재정의할 수 없으므로 제거 (에러 발생 방지)
-      // 대신 window.location.href 직접 할당을 감지하는 방법은 제한적이므로
-      // history API만 차단하는 것으로 충분
+      // Next.js router 차단 (가능한 경우)
+      // @ts-ignore
+      if (window.next && window.next.router) {
+        // @ts-ignore
+        const originalPush = window.next.router.push;
+        // @ts-ignore
+        const originalReplace = window.next.router.replace;
+        // @ts-ignore
+        window.next.router.push = blockNavigation;
+        // @ts-ignore
+        window.next.router.replace = blockNavigation;
+      }
 
       return () => {
         window.removeEventListener("beforeunload", preventNavigation);
@@ -98,6 +108,13 @@ function CardsContent() {
         history.go = originalGo;
         history.back = originalBack;
         history.forward = originalForward;
+        // @ts-ignore
+        if (window.next && window.next.router) {
+          // @ts-ignore
+          window.next.router.push = originalPush;
+          // @ts-ignore
+          window.next.router.replace = originalReplace;
+        }
       };
     }
   }, [isScreenshot]);
