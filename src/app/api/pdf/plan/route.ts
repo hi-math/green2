@@ -170,10 +170,22 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       deviceScaleFactor,
     });
 
+    // 디버깅: 네트워크 응답 로깅 (401/403/302 감지)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    page.on("response", (res: any) => {
+      const status = res.status();
+      const url = res.url();
+      if (status >= 400 || status === 302) {
+        console.log("RES:", status, url);
+      }
+    });
+
     // 디버깅: 네비게이션 이벤트 로깅
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     page.on("framenavigated", (frame: any) => {
-      console.log("NAV:", frame.url());
+      if (frame === page.mainFrame()) {
+        console.log("NAV:", frame.url());
+      }
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     page.on("console", (msg: any) => {
@@ -206,55 +218,90 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     // 페이지 로드
     await page.goto(renderUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 15000,
+      timeout: 30000,
     });
 
-    // 디버깅: goto 직후 URL 확인
+    // 필수 진단 로그: "지금 페이지가 뭐였는지" 확인
     const landed = page.url();
-    console.log("goto done url:", landed);
+    const pageTitle = await page.title();
+    const htmlHead = (await page.content()).slice(0, 500);
+    
+    console.log("=== 페이지 로드 후 진단 ===");
+    console.log("LANDED URL:", landed);
+    console.log("TITLE:", pageTitle);
+    console.log("HTML_HEAD:", htmlHead);
+    
+    // 스크린샷 저장 (디버깅용)
+    try {
+      await page.screenshot({ path: "/tmp/landed.png", fullPage: true });
+      console.log("스크린샷 저장: /tmp/landed.png");
+    } catch (screenshotError) {
+      console.warn("스크린샷 저장 실패:", screenshotError);
+    }
 
-    // Vercel 보호(401/SSO/Password)로 인한 로그인 페이지 리다이렉트 감지
-    if (landed.includes("vercel.com/login") || landed.includes("/login") && !landed.includes("/pdf/cards")) {
-      const errorMessage = `캡처 URL이 Vercel 보호(401/SSO/Password)에 걸려 로그인 페이지로 리다이렉트됩니다. 
+    // 원인 A 진단: 인증/리다이렉트로 다른 페이지를 보고 있는지 확인
+    if (!landed.includes("/pdf/cards") || 
+        landed.includes("vercel.com/login") || 
+        (landed.includes("/login") && !landed.includes("/pdf/cards"))) {
+      const errorMessage = `[원인 A] 캡처 URL이 인증/리다이렉트로 다른 페이지를 보고 있습니다.
 원인: ${renderUrl} → ${landed}
-해결: /pdf/cards는 공개 접근 가능해야 합니다. Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하거나, Production 배포(공개) 도메인에서 캡처하세요.`;
+TITLE: ${pageTitle}
+처방: /pdf/cards?screenshot=1은 무조건 공개 렌더되어야 합니다. 
+- Vercel 프로젝트 설정에서 Password Protection/SSO/Protected Preview를 비활성화하세요.
+- 또는 Production 배포(공개) 도메인에서 캡처하세요.
+- 또는 캡처 URL을 동일 서버 내부로 바꾸세요 (http://127.0.0.1:3000).`;
       console.error(errorMessage);
       throw new Error(errorMessage);
     }
 
-    // 캡처 대상 요소가 준비될 때까지 대기
-    await page.waitForSelector("#capture-root", { visible: true, timeout: 10000 });
-
-    // 캡처 준비 완료 플래그 대기 (플래그가 없거나 false인 경우 대기)
-    // 플래그가 없어도 일정 시간 후 자동 진행
-    try {
-      await page.waitForFunction(
-        () => {
-          const ready = (window as any).__CAPTURE_READY__;
-          return ready === true;
-        },
-        { timeout: 5000, polling: 100 } // 타임아웃을 5초로 단축
-      );
-      console.log("__CAPTURE_READY__ 플래그 확인 완료");
-    } catch (error) {
-      // 플래그가 설정되지 않았어도 계속 진행 (fallback)
-      console.warn("__CAPTURE_READY__ 플래그 대기 실패, 계속 진행:", error);
-      // 플래그 상태 확인
-      const flagStatus = await page.evaluate(() => {
-        return {
-          exists: typeof (window as any).__CAPTURE_READY__ !== 'undefined',
-          value: (window as any).__CAPTURE_READY__,
-        };
-      });
-      console.log("플래그 상태:", flagStatus);
+    // 원인 B 진단: #capture-root가 페이지에 있는지 확인
+    const hasCaptureRoot = htmlHead.includes("capture-root") || 
+                          htmlHead.includes("captureRoot") ||
+                          htmlHead.includes("capture_root");
+    
+    if (!hasCaptureRoot) {
+      // HTML 전체에서 확인
+      const fullHtml = await page.content();
+      const hasCaptureRootInFull = fullHtml.includes("capture-root");
       
-      // 플래그가 없어도 추가 안전 대기 후 진행
-      console.log("플래그 없이 추가 안전 대기 (500ms) 후 진행");
-      await new Promise((r) => setTimeout(r, 500));
+      if (!hasCaptureRootInFull) {
+        const errorMessage = `[원인 B] #capture-root id가 페이지에 없습니다.
+LANDED URL: ${landed}
+TITLE: ${pageTitle}
+HTML_HEAD에 capture-root 문자열이 없습니다.
+처방: /pdf/cards 페이지에서 반드시 항상 <div id="capture-root">가 렌더되도록 수정하세요.
+- 조건부 렌더(데이터 없으면 return null 등) 제거
+- data 파라미터 파싱 실패해도 #capture-root만큼은 렌더되게 ("에러 UI도 capture-root 안에")`;
+        console.error(errorMessage);
+        throw new Error(errorMessage);
+      }
     }
 
-    // 짧은 안전 대기
-    await new Promise((r) => setTimeout(r, 100));
+    // 캡처 대상 요소가 준비될 때까지 대기 (원인 C 대응)
+    await page.waitForSelector("#capture-root", { visible: true, timeout: 30000 });
+
+    // 원인 C 대응: 폰트 로딩 + 레이아웃 안정화 대기
+    console.log("레이아웃 안정화 대기 중...");
+    await page.evaluate(async () => {
+      // 폰트 로딩 완료
+      try {
+        await (document as any).fonts?.ready;
+      } catch (e) {
+        // 폰트 API가 없거나 실패해도 계속 진행
+      }
+      
+      // 다음 프레임 2번 대기 (레이아웃 안정화)
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      });
+    });
+
+    // 추가 안전 대기
+    await new Promise((r) => setTimeout(r, 300));
 
     // 디버깅: 캡처 직전 URL 확인 (리다이렉트 재확인)
     const beforeScreenshotUrl = page.url();

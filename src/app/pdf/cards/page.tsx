@@ -385,7 +385,12 @@ function CardsContent() {
 
 export default function PdfCardsPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={
+      // Suspense fallback도 #capture-root 안에 있어야 함
+      <div id="capture-root" style={{ padding: '20px', textAlign: 'center' }}>
+        <div>로딩 중...</div>
+      </div>
+    }>
       <CardsContent />
     </Suspense>
   );
