@@ -122,7 +122,10 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
             selector: "#capture-root",
             width: 1200,
             height: 1200,
-            format: "png",
+            format: "jpeg",
+            quality: 70,
+            outputWidth: 1920, // 캡처 선명도 우선 (최종 1920px)
+            deviceScaleFactor: 2,
             timeout: 30000,
           }),
         });
@@ -223,11 +226,12 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
 
     console.log(`스크린샷 캡처 완료: ${screenshotBuffer.length} bytes (${Date.now() - startTime}ms)`);
 
-    // PDF 생성
+    // PDF 생성 (compress: true로 용량 최소화, 목표 1MB 내외)
     const doc = new jsPDF({
       orientation: PDF_CONFIG.orientation,
       unit: PDF_CONFIG.unit,
       format: PDF_CONFIG.format,
+      compress: true,
     });
 
     // 페이지 크기 가져오기 (A4 가로: 297mm x 210mm)
@@ -238,20 +242,24 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     const contentWidth = pageWidth - PDF_CONFIG.margin.left - PDF_CONFIG.margin.right;
     let currentY = PDF_CONFIG.margin.top + PDF_CONFIG.titleTopMargin; // 상단 여백 1cm + 타이틀 위 여백 0.5cm
 
-    // 1. title.png 이미지 추가 (상단, 가로 꽉 차게)
+    // JPEG 품질/크로마 설정 (PDF 용량 목표 1MB 내외)
+    const JPEG_QUALITY = 70;
+    const JPEG_CHROMA = "4:2:0" as const;
+
+    // 1. title.png → JPEG 변환 후 추가 (상단, 가로 꽉 차게)
     const titleImagePath = join(process.cwd(), "public", "images", "pdf", "title.png");
     const titleImageBuffer = readFileSync(titleImagePath);
-    const titleImageMetadata = await sharp(titleImageBuffer).metadata();
+    const titleJpegBuffer = await sharp(titleImageBuffer)
+      .jpeg({ quality: JPEG_QUALITY, chromaSubsampling: JPEG_CHROMA })
+      .toBuffer();
+    const titleImageMetadata = await sharp(titleJpegBuffer).metadata();
     const titleImageWidthPx = titleImageMetadata.width || 1;
     const titleImageHeightPx = titleImageMetadata.height || 1;
     const titleImageAspectRatio = titleImageWidthPx / titleImageHeightPx;
-    
-    const titleImageBase64 = titleImageBuffer.toString("base64");
-    const titleImageData = `data:image/png;base64,${titleImageBase64}`;
     const titleImageWidth = contentWidth;
     const titleImageHeight = titleImageWidth / titleImageAspectRatio;
-    
-    doc.addImage(titleImageData, "PNG", PDF_CONFIG.margin.left, currentY, titleImageWidth, titleImageHeight);
+    const titleImageData = `data:image/jpeg;base64,${titleJpegBuffer.toString("base64")}`;
+    doc.addImage(titleImageData, "JPEG", PDF_CONFIG.margin.left, currentY, titleImageWidth, titleImageHeight, undefined, "FAST");
     currentY += titleImageHeight;
 
     // 2. 학교명 추가 (이미지 바로 아래, 오른쪽 정렬, 오른쪽 여백 0.5cm)
@@ -280,20 +288,20 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     doc.text(schoolName, schoolNameX, schoolNameY, { align: "right" });
     currentY = schoolNameY + 5; // 학교명 아래 5mm
 
-    // 3. subtitle1.png 이미지 추가 (학교명 아래)
+    // 3. subtitle1.png → JPEG 변환 후 추가 (학교명 아래)
     const subtitle1Path = join(process.cwd(), "public", "images", "pdf", "subtitle1.png");
     const subtitle1Buffer = readFileSync(subtitle1Path);
-    const subtitle1Metadata = await sharp(subtitle1Buffer).metadata();
+    const subtitle1JpegBuffer = await sharp(subtitle1Buffer)
+      .jpeg({ quality: JPEG_QUALITY, chromaSubsampling: JPEG_CHROMA })
+      .toBuffer();
+    const subtitle1Metadata = await sharp(subtitle1JpegBuffer).metadata();
     const subtitle1WidthPx = subtitle1Metadata.width || 1;
     const subtitle1HeightPx = subtitle1Metadata.height || 1;
     const subtitle1AspectRatio = subtitle1WidthPx / subtitle1HeightPx;
-    
-    const subtitle1Base64 = subtitle1Buffer.toString("base64");
-    const subtitle1Data = `data:image/png;base64,${subtitle1Base64}`;
     const subtitle1Width = contentWidth;
     const subtitle1Height = subtitle1Width / subtitle1AspectRatio;
-    
-    doc.addImage(subtitle1Data, "PNG", PDF_CONFIG.margin.left, currentY, subtitle1Width, subtitle1Height);
+    const subtitle1Data = `data:image/jpeg;base64,${subtitle1JpegBuffer.toString("base64")}`;
+    doc.addImage(subtitle1Data, "JPEG", PDF_CONFIG.margin.left, currentY, subtitle1Width, subtitle1Height, undefined, "FAST");
     currentY += subtitle1Height + 5; // subtitle1 아래 5mm 간격
 
     // 4. 스크린샷 이미지 추가 (subtitle1 아래, 85% 크기)
@@ -333,9 +341,17 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       screenshotHeightPx = originalElementHeight;
       console.log(`이미지 자르기 완료: ${screenshotWidthPx}x${screenshotHeightPx}px`);
     }
+
+    // 스크린샷이 PNG로 오면 JPEG로 변환 (capture가 이미 JPEG 반환 시 그대로 사용)
+    const isScreenshotPng = screenshotBuffer[0] === 0x89 && screenshotBuffer[1] === 0x50 && screenshotBuffer[2] === 0x4E && screenshotBuffer[3] === 0x47;
+    if (isScreenshotPng) {
+      screenshotBuffer = await sharp(screenshotBuffer)
+        .jpeg({ quality: JPEG_QUALITY, chromaSubsampling: JPEG_CHROMA })
+        .toBuffer();
+    }
     
     const screenshotBase64 = screenshotBuffer.toString("base64");
-    const screenshotData = `data:image/png;base64,${screenshotBase64}`;
+    const screenshotData = `data:image/jpeg;base64,${screenshotBase64}`;
     const screenshotAspectRatio = screenshotWidthPx / screenshotHeightPx;
     
     // 남은 공간 계산
@@ -370,24 +386,24 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
     // 중앙 정렬을 위해 X 위치 재조정
     screenshotX = PDF_CONFIG.margin.left + (contentWidth - screenshotWidth) / 2;
 
-    // 스크린샷 이미지를 PDF에 추가
-    doc.addImage(screenshotData, "PNG", screenshotX, screenshotY, screenshotWidth, screenshotHeight);
+    // 스크린샷 이미지를 PDF에 추가 (JPEG, FAST 압축)
+    doc.addImage(screenshotData, "JPEG", screenshotX, screenshotY, screenshotWidth, screenshotHeight, undefined, "FAST");
     currentY += screenshotHeight + 10; // 스크린샷 아래 1cm (10mm) 간격
 
-    // 5. subtitle2.png 이미지 추가 (스크린샷 아래)
+    // 5. subtitle2.png → JPEG 변환 후 추가 (스크린샷 아래)
     const subtitle2Path = join(process.cwd(), "public", "images", "pdf", "subtitle2.png");
     const subtitle2Buffer = readFileSync(subtitle2Path);
-    const subtitle2Metadata = await sharp(subtitle2Buffer).metadata();
+    const subtitle2JpegBuffer = await sharp(subtitle2Buffer)
+      .jpeg({ quality: JPEG_QUALITY, chromaSubsampling: JPEG_CHROMA })
+      .toBuffer();
+    const subtitle2Metadata = await sharp(subtitle2JpegBuffer).metadata();
     const subtitle2WidthPx = subtitle2Metadata.width || 1;
     const subtitle2HeightPx = subtitle2Metadata.height || 1;
     const subtitle2AspectRatio = subtitle2WidthPx / subtitle2HeightPx;
-    
-    const subtitle2Base64 = subtitle2Buffer.toString("base64");
-    const subtitle2Data = `data:image/png;base64,${subtitle2Base64}`;
     const subtitle2Width = contentWidth;
     const subtitle2Height = subtitle2Width / subtitle2AspectRatio;
-    
-    doc.addImage(subtitle2Data, "PNG", PDF_CONFIG.margin.left, currentY, subtitle2Width, subtitle2Height);
+    const subtitle2Data = `data:image/jpeg;base64,${subtitle2JpegBuffer.toString("base64")}`;
+    doc.addImage(subtitle2Data, "JPEG", PDF_CONFIG.margin.left, currentY, subtitle2Width, subtitle2Height, undefined, "FAST");
     currentY += subtitle2Height + 5; // subtitle2 아래 0.5cm (5mm) 간격
 
     // 6. 테이블 추가 (subtitle2 아래)
@@ -415,11 +431,18 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       const indexColumnWidth = 25; // 인덱스 컬럼 너비 (텍스트 크기에 맞춤)
       const dataColumnWidth = (tableContentWidth - indexColumnWidth) / 4; // 데이터 컬럼 너비 (4개 균등 분할)
       const tableStartX = PDF_CONFIG.margin.left + tableSideMargin; // 테이블 시작 X 좌표
-      const row1Height = 15; // 첫 번째 row 높이 (실천 과제)
+      const row1Height = 17; // 첫 번째 row 높이 (실천 과제, 15+2mm)
       const leftPadding = 4; // 왼쪽 여백 4mm (5mm에서 1mm 감소)
       const cellPadding = 5; // 셀 내부 여백 0.5cm (5mm)
+      const cellMargin = 4; // 셀 기본마진/패딩 4mm (세부 실천계획 row: 좌·우·상·하 4mm)
       const lineHeight = 8; // 줄 간격 8mm (세부 실천계획 줄간격)
       const fontSize = 9; // 세부 실천계획 폰트 크기
+      const detailCellContentWidth = dataColumnWidth - cellMargin * 2; // 텍스트용 너비 (좌우 각 4mm 여백)
+
+      // 세부 실천계획 row 셀 레이아웃:
+      // - 패딩: 좌 4mm, 우 4mm, 상 6mm, 하 4mm
+      const detailTopPadding = 6; // 세부 실천계획 셀 위쪽 패딩 6mm
+      // - row 높이 = max(텍스트줄수*lineHeight + 상6 + 하4, minRow2Height 28mm)
 
       // 각 세부 실천계획의 높이를 계산 (가장 긴 것 찾기)
       doc.setFont("NanumMyeongjo", "normal");
@@ -433,10 +456,10 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
         if (idx < group.length) {
           const item = group[idx];
           if (item.details.length > 0) {
-            // 리스트 표식(•)을 포함한 텍스트로 높이 계산
+            // 리스트 표식(•)을 포함한 텍스트로 높이 계산 (셀 기본마진 4mm 반영)
             const detailsWithBullets = item.details.map(d => `• ${d}`).join("\n");
-            const lines = doc.splitTextToSize(detailsWithBullets, dataColumnWidth - leftPadding - cellPadding * 2);
-            const height = lines.length * lineHeight + 3; // 3mm만 더함 (기존 cellPadding * 2 = 10mm 대신)
+            const lines = doc.splitTextToSize(detailsWithBullets, detailCellContentWidth);
+            const height = lines.length * lineHeight + detailTopPadding + cellMargin; // 상 6mm, 하 4mm
             detailHeights.push(height);
             maxDetailHeight = Math.max(maxDetailHeight, height);
           } else {
@@ -451,8 +474,8 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
         }
       }
 
-      // 최소 높이 보장
-      const minRow2Height = 15;
+      // 최소 높이 보장 (세부 실천계획 row)
+      const minRow2Height = 28; // 28mm
       const row2Height = Math.max(maxDetailHeight, minRow2Height);
       const totalTableHeight = row1Height + row2Height;
 
@@ -531,8 +554,8 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       
-      // Row1 각 셀의 세로 중앙 계산 (2.8mm 아래로 이동)
-      const row1Center = tableStartY + row1Height / 2 + 2.8;
+      // Row1 각 셀의 세로 중앙 계산 (2.8+1mm 아래, 0.8mm 위 = +3.0)
+      const row1Center = tableStartY + row1Height / 2 + 3.0;
       
       // 텍스트 블록 높이 계산을 위한 설정
       const maxTextWidth = dataColumnWidth - 2 * cellPadding; // 셀 안에서 텍스트가 옆으로 삐져나오지 않게 제한
@@ -600,8 +623,8 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       // Row 2: 인덱스 "세부\n실천 계획" + 세부 내용들
       const row2StartY = tableStartY + row1Height;
       
-      // 인덱스 "세부\n실천 계획" (두 번째 row의 중앙)
-      const row2CenterY = row2StartY + row2Height / 2;
+      // 인덱스 "세부\n실천 계획" (두 번째 row의 중앙, 위로 3mm)
+      const row2CenterY = row2StartY + row2Height / 2 - 3;
       doc.setFont("NanumMyeongjo", "bold");
       doc.setFontSize(10);
       doc.text(
@@ -611,57 +634,39 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
         { align: "center", baseline: "middle" }
       );
 
-      // 세부 내용들 (위쪽 정렬, 왼쪽 정렬, 리스트 표식 포함)
+      // 세부 내용들 (셀 안에서 위쪽·왼쪽 정렬, 위 6mm / 좌우하 4mm)
       doc.setFont("NanumMyeongjo", "normal");
       doc.setFontSize(fontSize);
       
       for (let idx = 0; idx < 4; idx++) {
-        const x = tableStartX + indexColumnWidth + dataColumnWidth * idx;
-        const cellWidth = dataColumnWidth - leftPadding - cellPadding + 1; // 왼쪽 여백과 오른쪽 패딩 제외 (좌우 각각 1mm 감소로 총 2mm 증가)
-        const cellX = x + leftPadding; // 왼쪽 여백 4mm (5mm에서 1mm 감소)
-        const cellStartY = row2StartY + cellPadding; // 위쪽 정렬 (셀 패딩 0.5cm)
+        const cellLeftX = tableStartX + indexColumnWidth + dataColumnWidth * idx + cellMargin;
         
         if (idx < group.length) {
-          // 실제 데이터가 있는 경우
           const item = group[idx];
           
           if (item.details.length > 0) {
-            // 각 detail 항목을 개별적으로 처리하여 표식 위치 보호
-            let currentLineIndex = 0;
-            const bulletIndent = 4; // 표식과 텍스트 사이 간격 (mm)
+            let totalLineCount = 0;
+            const allLines: string[] = [];
+            item.details.forEach((detail) => {
+              const detailLines = doc.splitTextToSize(detail, detailCellContentWidth);
+              detailLines.forEach((line, lineIdx) => {
+                allLines.push(lineIdx === 0 ? `• ${line}` : line);
+                totalLineCount++;
+              });
+            });
             
-            item.details.forEach((detail, detailIdx) => {
-              // 각 detail 항목을 줄바꿈 처리
-              const detailLines = doc.splitTextToSize(detail, cellWidth - bulletIndent);
-              
-              detailLines.forEach((line: string, lineIdx: number) => {
-                const yPos = cellStartY + currentLineIndex * lineHeight + 2;
-                
-                if (lineIdx === 0) {
-                  // 첫 번째 줄: 표식(•) 포함
-                  doc.text(
-                    `• ${line}`,
-                    cellX,
-                    yPos,
-                    { align: "left", maxWidth: cellWidth }
-                  );
-                } else {
-                  // 이후 줄: 들여쓰기 추가하여 표식 위치 보호
-                  doc.text(
-                    line,
-                    cellX + bulletIndent,
-                    yPos,
-                    { align: "left", maxWidth: cellWidth - bulletIndent }
-                  );
-                }
-                
-                currentLineIndex++;
+            // 셀 위쪽에서 시작 (위쪽 정렬)
+            const startY = row2StartY + detailTopPadding;
+            
+            allLines.forEach((line, lineIdx) => {
+              const yPos = startY + lineIdx * lineHeight;
+              doc.text(line, cellLeftX, yPos, {
+                align: "left",
+                maxWidth: detailCellContentWidth,
               });
             });
           }
-          // details가 없으면 공란으로 둠 (하이픈 표시 안 함)
         }
-        // 빈 셀인 경우도 공란으로 둠 (하이픈 표시 안 함)
       }
 
       currentY = tableStartY + totalTableHeight + 3; // 테이블 아래 3mm 간격

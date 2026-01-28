@@ -8,10 +8,12 @@ export const maxDuration = 30; // Vercel Pro 플랜 기준 (Hobby는 10초)
 // ✅ 캡쳐 최적화 상수
 const DEFAULT_VIEWPORT_WIDTH = 1900;
 const DEFAULT_VIEWPORT_HEIGHT = 1200;
-const DEFAULT_OUTPUT_WIDTH = 1600; // 해상도 2배 (800 -> 1600)
+const DEFAULT_OUTPUT_WIDTH = 1920; // 캡처 선명도 우선 (PDF는 JPEG/품질로 용량 조절)
 const DEFAULT_SELECTOR = '#capture-root';
 const READY_SELECTOR_TIMEOUT = 8000; // 8초
-const JPEG_QUALITY = 80; // JPEG 품질 기본값
+const JPEG_QUALITY = 70; // JPEG 품질 65~75 (용량/품질 균형)
+const JPEG_CHROMA_SUBSAMPLING = '4:2:0' as const; // chroma 4:2:0
+const DEVICE_SCALE_FACTOR = 2; // 2배 해상도로 선명도 확보 (1.5~2 허용)
 const DEFAULT_PADDING = 24; // 좌우 패딩 기본값 (px)
 
 // ✅ 2️⃣ puppeteer / chromium 설정: 환경별 분기 처리
@@ -101,7 +103,7 @@ export async function POST(request: NextRequest) {
       width = DEFAULT_VIEWPORT_WIDTH, 
       height = DEFAULT_VIEWPORT_HEIGHT, 
       sessionData, 
-      format = 'png',
+      format = 'jpeg', // PDF 용량 최적화: JPEG 기본
       outputWidth = DEFAULT_OUTPUT_WIDTH,
       viewportWidth = DEFAULT_VIEWPORT_WIDTH,
       viewportHeight = DEFAULT_VIEWPORT_HEIGHT,
@@ -109,6 +111,7 @@ export async function POST(request: NextRequest) {
       quality = JPEG_QUALITY,
       padding = DEFAULT_PADDING, // 좌우 패딩 (px, 0이면 패딩 없음)
       useCssPadding = false, // CSS 주입 방식 사용 여부 (기본: false, sharp 후처리 사용)
+      deviceScaleFactor: bodyScale,
     } = body;
 
     // ✅ 3️⃣ 보안: URL 검증
@@ -134,11 +137,12 @@ export async function POST(request: NextRequest) {
     const finalViewportWidth = viewportWidth || DEFAULT_VIEWPORT_WIDTH;
     const finalViewportHeight = viewportHeight || DEFAULT_VIEWPORT_HEIGHT;
     
+    const deviceScaleFactor = Math.min(2, Math.max(1, Number(bodyScale) || DEVICE_SCALE_FACTOR));
     let browserConfig: any = {
       defaultViewport: {
         width: finalViewportWidth,
         height: finalViewportHeight,
-        deviceScaleFactor: 2, // 해상도 2배
+        deviceScaleFactor, // 1.5~2 이하 제한
       },
       headless: true,
     };
@@ -905,7 +909,10 @@ export async function POST(request: NextRequest) {
                   if (imageType === 'png') {
                     originalScreenshot = (await compositeResult.png().toBuffer()) as Buffer;
                   } else {
-                    originalScreenshot = (await compositeResult.jpeg({ quality }).toBuffer()) as Buffer;
+                    originalScreenshot = (await compositeResult.jpeg({
+                      quality,
+                      chromaSubsampling: JPEG_CHROMA_SUBSAMPLING,
+                    }).toBuffer()) as Buffer;
                   }
                   
                   console.log(`composite 완료: ${originalScreenshot.length} bytes 생성됨`);
@@ -951,7 +958,7 @@ export async function POST(request: NextRequest) {
                 await page.setViewport({
                   width: requiredWidth,
                   height: requiredHeight,
-                  deviceScaleFactor: 2, // 해상도 2배
+                  deviceScaleFactor,
                 });
                 console.log(`Viewport 조정: ${currentViewport.width}x${currentViewport.height} → ${requiredWidth}x${requiredHeight}`);
                 
@@ -1040,8 +1047,9 @@ export async function POST(request: NextRequest) {
       
       let img: sharp.Sharp;
       try {
-        img = sharp(originalScreenshot).resize({ 
-          width: outputWidth, 
+        const maxWidth = Math.min(2400, outputWidth || DEFAULT_OUTPUT_WIDTH); // 최대 2400px(DPR2×1200)까지 허용
+      img = sharp(originalScreenshot).resize({ 
+          width: maxWidth, 
           withoutEnlargement: true 
         });
       } catch (error) {
@@ -1077,8 +1085,8 @@ export async function POST(request: NextRequest) {
         // PNG 압축 레벨 9 (너무 느리면 6~8로 조정 가능)
         img = img.png({ compressionLevel: 9 });
       } else {
-        // JPEG 품질
-        img = img.jpeg({ quality });
+        // JPEG: quality 65~75, chroma 4:2:0 (PDF 용량 목표 1MB 내외)
+        img = img.jpeg({ quality, chromaSubsampling: JPEG_CHROMA_SUBSAMPLING });
       }
 
       const resizedBuffer = await img.toBuffer();
