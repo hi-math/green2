@@ -648,8 +648,8 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
             let totalLineCount = 0;
             const allLines: string[] = [];
             item.details.forEach((detail) => {
-              const detailLines = doc.splitTextToSize(detail, detailCellContentWidth);
-              detailLines.forEach((line, lineIdx) => {
+              const detailLines: string[] = doc.splitTextToSize(detail, detailCellContentWidth) as string[];
+              detailLines.forEach((line: string, lineIdx: number) => {
                 allLines.push(lineIdx === 0 ? `• ${line}` : line);
                 totalLineCount++;
               });
