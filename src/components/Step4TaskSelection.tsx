@@ -107,6 +107,32 @@ const getCategoryUnderlineFocusColor = (category: string) => {
 
 const CATEGORY_ORDER = ["실천 행동의 일상화", "실천 문화 확산", "학교 환경 조성"];
 
+/** 공책형 영역 실선 언더라인 배경 (22px 간격, 1px 실선) */
+const NOTEBOOK_LINE_BG =
+  "repeating-linear-gradient(transparent, transparent 22px, rgba(75,70,41,0.12) 22px, rgba(75,70,41,0.12) 23px)";
+
+/** 예시 보기용 카드 데이터 (읽기 전용, 공책형 텍스트 형식) */
+const EXAMPLE_CARDS = [
+  {
+    category: "실천 행동의 일상화",
+    title: "학교차원 대기전력 차단 관리",
+    detailText: `(기간) 연중
+(방법)
+- 교직원: 퇴근시 멀티탭 끄기
+- 시설 관리 담당자 : 대기전력 차단장치 활용
+- 당직 담당자 : 야간 근무시 전원 차단 여부 확인`,
+  },
+  {
+    category: "실천 문화 확산",
+    title: "학생 주도 나눔 장터 운영",
+    detailText: `(기간) 9월중
+(방법)
+- 가정에서 사용 빈도가 낮은 물품 수거
+- 물품 제출시 바우처 지급
+- 바우처를 이용한 물물 거래`,
+  },
+] as const;
+
 // Step2의 모든 항목 정의
 const ALL_ITEMS: TaskItem[] = [
   { id: "daily-01", label: "학교 탄소중립 실천 과제 선정 및 실천", category: "실천 행동의 일상화" },
@@ -193,16 +219,6 @@ export function Step4TaskSelection() {
     message: "",
   });
 
-  const detailDragIndexRef = useRef<number | null>(null);
-  const detailDragItemIdRef = useRef<string | null>(null); // 드래그 중인 카드 id (다른 과제에 영향 없도록)
-  const detailDragOverIndexRef = useRef<number | null>(null);
-  const lastSwapPairRef = useRef<{ active: number; over: number } | null>(null);
-  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [detailDraggingIndex, setDetailDraggingIndex] = useState<number | null>(null);
-  const [detailDraggingItemId, setDetailDraggingItemId] = useState<string | null>(null);
-  const [detailDragOverIndex, setDetailDragOverIndex] = useState<number | null>(null);
-  const [detailEditingIndex, setDetailEditingIndex] = useState<number | null>(null);
-  
   // 카드 드래그 상태
   const cardDragIndexRef = useRef<number | null>(null);
   const cardDragOverIndexRef = useRef<number | null>(null);
@@ -211,7 +227,7 @@ export function Step4TaskSelection() {
   const [cardDragOverIndex, setCardDragOverIndex] = useState<number | null>(null);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [itemInputs, setItemInputs] = useState<Record<string, string[]>>({});
+  const [itemInputs, setItemInputs] = useState<Record<string, string>>({});
 
   const [extraTaskInput, setExtraTaskInput] = useState("");
   const [extraTasks, setExtraTasks] = useState<TaskItem[]>([]);
@@ -235,6 +251,8 @@ export function Step4TaskSelection() {
   } | null>(null);
 
   const [reductionPercent, setReductionPercent] = useState(10);
+  const [hasUserMovedSlider, setHasUserMovedSlider] = useState(false);
+  const [showExampleCards, setShowExampleCards] = useState(false);
 
   // Step1 데이터 로드
   useEffect(() => {
@@ -267,27 +285,7 @@ export function Step4TaskSelection() {
     setLeftItems(uncheckedItems);
     setRightItems([]);
     setExtraTasks([]);
-    setDetailEditingIndex(null);
   }, []);
-
-  // 모든 textarea의 높이를 자동으로 조절
-  useEffect(() => {
-    const adjustTextareaHeights = () => {
-      const textareas = document.querySelectorAll<HTMLTextAreaElement>('.detail-input');
-      textareas.forEach((textarea) => {
-        const BASE = 22;
-        textarea.style.height = `${BASE}px`;
-        textarea.style.height = `${Math.max(BASE, textarea.scrollHeight)}px`;
-      });
-    };
-
-    adjustTextareaHeights();
-    
-    // itemInputs가 변경될 때마다 높이 조절
-    const timeoutId = setTimeout(adjustTextareaHeights, 50);
-    
-    return () => clearTimeout(timeoutId);
-  }, [itemInputs, detailEditingIndex]);
 
   const fmt0 = useMemo(() => {
     return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
@@ -439,7 +437,7 @@ export function Step4TaskSelection() {
         style: {
           fontSize: "10px",
           fontWeight: 700,
-          colors: ["rgba(75,70,41,0.75)"],
+          colors: ["#4b4629", "#4b4629"],
         },
       },
       axisBorder: { show: false },
@@ -521,8 +519,8 @@ export function Step4TaskSelection() {
 
     // 세부 실천과제 입력창 초기화
     setItemInputs((prev) => {
-      if (!prev[itemId]) {
-        return { ...prev, [itemId]: [""] };
+      if (!(itemId in prev)) {
+        return { ...prev, [itemId]: "" };
       }
       return prev;
     });
@@ -552,68 +550,14 @@ export function Step4TaskSelection() {
 
   const handleRightItemClick = (itemId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    
-    // blur 타이머가 있으면 취소
-    if (blurTimeoutRef.current) {
-      clearTimeout(blurTimeoutRef.current);
-      blurTimeoutRef.current = null;
-    }
-    
-    // 이미 선택된 과제를 다시 클릭하면 첫 번째 항목 수정 모드
-    if (selectedItemId === itemId) {
-      const inputs = itemInputs[itemId] || [""];
-      // 저장된 내용이 있는 첫 번째 항목을 수정 모드로
-      const firstNonEmptyIndex = inputs.findIndex((v) => v.trim().length > 0);
-      if (firstNonEmptyIndex >= 0) {
-        setDetailEditingIndex(firstNonEmptyIndex);
-      } else {
-        setDetailEditingIndex(0);
-      }
-      return;
-    }
-    
-    // 현재 입력 상태 확인
-    const currentInputs = itemInputs[itemId] || [""];
-    const hasExistingContent = currentInputs.some((v) => v.trim().length > 0);
-    
     setSelectedItemId(itemId);
-    if (!itemInputs[itemId]) {
-      setItemInputs((prev) => ({ ...prev, [itemId]: [""] }));
+    if (!(itemId in itemInputs)) {
+      setItemInputs((prev) => ({ ...prev, [itemId]: "" }));
     }
-    
-    // 새로 선택된 과제의 첫 번째 항목을 수정 모드로
-    setTimeout(() => {
-      if (hasExistingContent) {
-        const firstNonEmptyIndex = currentInputs.findIndex((v) => v.trim().length > 0);
-        setDetailEditingIndex(firstNonEmptyIndex >= 0 ? firstNonEmptyIndex : 0);
-      } else {
-        setDetailEditingIndex(0);
-      }
-    }, 50);
   };
 
-  const handleInputChange = (itemId: string, index: number, value: string) => {
-    setItemInputs((prev) => {
-      const inputs = prev[itemId] || [""];
-      const nextInputs = [...inputs];
-      nextInputs[index] = value;
-      return { ...prev, [itemId]: nextInputs };
-    });
-  };
-
-  const handleAddInput = (itemId: string) => {
-    setItemInputs((prev) => {
-      const inputs = prev[itemId] || [""];
-      return { ...prev, [itemId]: [...inputs, ""] };
-    });
-  };
-
-  const handleRemoveInput = (itemId: string, index: number) => {
-    setItemInputs((prev) => {
-      const inputs = prev[itemId] || [""];
-      const nextInputs = inputs.filter((_, i) => i !== index);
-      return { ...prev, [itemId]: nextInputs.length > 0 ? nextInputs : [""] };
-    });
+  const handleDetailTextChange = (itemId: string, value: string) => {
+    setItemInputs((prev) => ({ ...prev, [itemId]: value }));
   };
 
   const handleAddExtraTask = () => {
@@ -629,7 +573,7 @@ export function Step4TaskSelection() {
     setExtraTasks((prev) => [...prev, newTask]);
     
     // 세부 실천과제 입력창 초기화
-    setItemInputs((prev) => ({ ...prev, [newTask.id]: [""] }));
+    setItemInputs((prev) => ({ ...prev, [newTask.id]: "" }));
     
     setExtraTaskInput("");
   };
@@ -661,7 +605,7 @@ export function Step4TaskSelection() {
       };
       setExtraTasks((prev) => [...prev, tempTask]);
       setEditingTaskTitleId(tempTask.id);
-      setItemInputs((prev) => ({ ...prev, [tempTask.id]: [""] }));
+      setItemInputs((prev) => ({ ...prev, [tempTask.id]: "" }));
     }
     
     // 새 하늘색 카드 입력 모드 시작
@@ -699,18 +643,11 @@ export function Step4TaskSelection() {
         addedAt: maxAddedAt + 1,
       };
       setExtraTasks((prev) => [...prev, newTask]);
-      setItemInputs((prev) => ({ ...prev, [newTask.id]: [""] }));
-      
-      // 세부 실천과제 입력 모드로 자동 이동
+      setItemInputs((prev) => ({ ...prev, [newTask.id]: "" }));
       setSelectedItemId(newTask.id);
-      setDetailEditingIndex(0);
-      
-      // DOM 업데이트 후 포커스 이동
       setTimeout(() => {
-        const targetArea = document.getElementById(`detail-input-${newTask.id}-0`) as HTMLTextAreaElement;
-        if (targetArea) {
-          targetArea.focus();
-        }
+        const targetArea = document.getElementById(`detail-input-${newTask.id}`) as HTMLTextAreaElement;
+        if (targetArea) targetArea.focus();
       }, 50);
     }
     
@@ -731,136 +668,6 @@ export function Step4TaskSelection() {
     }
     setIsAddingNewTask(false);
     setNewTaskTitle("");
-  };
-
-  // 세부 실천과제 reorder (itemId = 드래그를 시작한 카드 id, 이 카드만 수정됨)
-  const handleDetailDragStart = (index: number, itemId: string, e?: React.DragEvent) => {
-    if (e) {
-      e.stopPropagation(); // 카드 드래그 이벤트 전파 방지
-      detailDragIndexRef.current = index;
-      detailDragItemIdRef.current = itemId;
-    }
-    setDetailDraggingIndex(index);
-    setDetailDraggingItemId(itemId);
-
-    if (e?.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      const target = e.currentTarget as HTMLElement;
-      const clone = target.cloneNode(true) as HTMLElement;
-      clone.style.position = "absolute";
-      clone.style.top = "-1000px";
-      clone.style.left = "0";
-      clone.style.opacity = "0.5";
-      clone.style.pointerEvents = "none";
-      clone.style.width = `${target.offsetWidth}px`;
-
-      document.body.appendChild(clone);
-      e.dataTransfer.setDragImage(clone, 0, 0);
-      setTimeout(() => document.body.removeChild(clone), 0);
-    }
-  };
-
-  // 경계선 기준 swap 판단 함수
-  const shouldSwapByBoundary = (
-    activeIndex: number,
-    overIndex: number,
-    pointerY: number,
-    overRect: { top: number; bottom: number }
-  ): boolean => {
-    if (activeIndex > overIndex) {
-      // 위로 드래그: 3 -> 2
-      const boundaryY = overRect.bottom; // 2/3 경계
-      return pointerY < boundaryY - 4; // 데드존 4px
-    }
-    if (activeIndex < overIndex) {
-      // 아래로 드래그: 2 -> 3
-      const boundaryY = overRect.top; // 2/3 경계
-      return pointerY > boundaryY + 4; // 데드존 4px
-    }
-    return false;
-  };
-
-  const handleDetailDragEnter = (targetIndex: number, e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDetailDragOver = (targetIndex: number, overItemId: string, e: React.DragEvent) => {
-    e.preventDefault();
-    const itemId = detailDragItemIdRef.current;
-    if (!itemId) return;
-    // 다른 카드 위로 드래그 중이면 무시 (같은 카드 안에서만 순서 변경)
-    if (itemId !== overItemId) return;
-    
-    const sourceIndex = detailDragIndexRef.current;
-    if (sourceIndex === null || sourceIndex === targetIndex) {
-      if (detailDragOverIndexRef.current !== null) {
-        detailDragOverIndexRef.current = null;
-        setDetailDragOverIndex(null);
-      }
-      return;
-    }
-
-    // 마우스 포인터 Y 좌표 가져오기
-    const pointerY = e.clientY;
-    
-    // 타겟 요소의 위치 정보 가져오기
-    const targetElement = e.currentTarget as HTMLElement;
-    const overRect = targetElement.getBoundingClientRect();
-
-    // 경계선 기준 swap 조건 확인
-    if (!shouldSwapByBoundary(sourceIndex, targetIndex, pointerY, overRect)) {
-      return;
-    }
-
-    // 연속 swap 방지: 마지막 swap 쌍과 같으면 무시
-    if (lastSwapPairRef.current?.active === sourceIndex && lastSwapPairRef.current?.over === targetIndex) {
-      return;
-    }
-
-    // swap 실행 (드래그를 시작한 카드만 수정)
-    setItemInputs((prev) => {
-      const inputs = prev[itemId] || [];
-      if (sourceIndex < 0 || sourceIndex >= inputs.length) return prev;
-      if (targetIndex < 0 || targetIndex >= inputs.length) return prev;
-
-      const nextInputs = [...inputs];
-      const [moved] = nextInputs.splice(sourceIndex, 1);
-      nextInputs.splice(targetIndex, 0, moved);
-
-      // 마지막 swap 쌍 저장
-      lastSwapPairRef.current = { active: sourceIndex, over: targetIndex };
-      
-      // 드래그 인덱스 업데이트 (swap 후 새로운 위치)
-      detailDragIndexRef.current = targetIndex;
-      setDetailDraggingIndex(targetIndex);
-
-      return { ...prev, [itemId]: nextInputs };
-    });
-
-    // 시각적 피드백을 위한 상태 업데이트
-    detailDragOverIndexRef.current = targetIndex;
-    setDetailDragOverIndex(targetIndex);
-  };
-
-  const handleDetailDrop = (_targetIndex: number) => {
-    detailDragIndexRef.current = null;
-    detailDragItemIdRef.current = null;
-    detailDragOverIndexRef.current = null;
-    lastSwapPairRef.current = null;
-    setDetailDragOverIndex(null);
-    setDetailDraggingIndex(null);
-    setDetailDraggingItemId(null);
-  };
-
-  const handleDetailDragEnd = () => {
-    detailDragIndexRef.current = null;
-    detailDragItemIdRef.current = null;
-    detailDragOverIndexRef.current = null;
-    lastSwapPairRef.current = null;
-    setDetailDragOverIndex(null);
-    setDetailDraggingIndex(null);
-    setDetailDraggingItemId(null);
   };
 
   // 카드 드래그 핸들러
@@ -990,14 +797,10 @@ export function Step4TaskSelection() {
     ? [...rightItems, ...extraTasks].find((it) => it.id === selectedItemId) ?? null
     : null;
 
-  const selectedItemInputs = selectedItemId ? itemInputs[selectedItemId] || [""] : [];
-
   const hasDetailInputs = (itemId: string) => {
-    const inputs = itemInputs[itemId] || [];
-    return inputs.some((input) => input.trim().length > 0);
+    const text = itemInputs[itemId] ?? "";
+    return text.trim().length > 0;
   };
-
-  // selectedItemId 변경 시 detailEditingIndex는 handleRightItemClick에서 설정하므로 여기서는 리셋하지 않음
 
   const saveStep4Data = () => {
     if (typeof window === "undefined") return;
@@ -1028,8 +831,8 @@ export function Step4TaskSelection() {
     
     // 검증 2: 세부실천과제가 입력되지 않은 과제가 있는지 확인
     const tasksWithoutDetails = allTasks.filter((task) => {
-      const inputs = itemInputs[task.id] || [];
-      return !inputs.some((input) => input.trim().length > 0);
+      const text = itemInputs[task.id] ?? "";
+      return !text.trim().length;
     });
     
     if (tasksWithoutDetails.length > 0) {
@@ -1068,24 +871,54 @@ export function Step4TaskSelection() {
           </div>
         </div>
 
-        {/* 우측: 감축 목표 영역 */}
+        {/* 우측: 감축 목표 영역 — 텍스트/슬라이더 영역 고정 너비로 분리해 레이아웃 안정화 */}
         <div className="rounded-2xl border border-slate-200 bg-white/70 shadow-sm backdrop-blur h-full flex flex-col px-4">
           <div className="flex items-center gap-3 pt-4">
-            <h3 className="text-sm font-extrabold text-[var(--brand-b)]">탄소배출 감축 목표</h3>
-            <div className="flex items-center gap-2 w-[120px]">
+            <div className="min-w-[200px] w-[200px] shrink-0 text-left">
+              <h3 className="text-sm font-extrabold text-[var(--brand-b)] tabular-nums">
+                탄소배출 감축 목표 :{" "}
+                <span
+                  className="inline-block font-extrabold"
+                  style={{
+                    fontSize: `${1 + (reductionPercent - 5) * 0.02}em`,
+                    color: "#166534",
+                  }}
+                >
+                  {reductionPercent}%
+                </span>{" "}
+                감축
+              </h3>
+            </div>
+            <div className="relative w-[72px] shrink-0">
               <input
                 type="range"
                 min={5}
                 max={15}
                 step={1}
                 value={reductionPercent}
-                onChange={(e) => setReductionPercent(Number(e.target.value))}
+                onChange={(e) => {
+                  setReductionPercent(Number(e.target.value));
+                  setHasUserMovedSlider(true);
+                }}
                 className="h-1 w-full accent-[var(--brand-b)]"
                 aria-label="감축 목표 비율"
               />
-              <span className="text-[11px] font-extrabold text-[var(--brand-b)] w-8 text-right tabular-nums">
-                {reductionPercent}%
-              </span>
+              {!hasUserMovedSlider && (
+                <div
+                  className="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2"
+                  aria-hidden="true"
+                >
+                  <div className="relative min-w-[180px] rounded-md bg-slate-900 px-2 py-1 text-center text-[10px] font-bold leading-snug text-white shadow-lg">
+                    슬라이더를 움직여 우리학교 탄소배출
+                    <br />
+                    감축목표를 설정하세요
+                    <span
+                      aria-hidden="true"
+                      className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-900"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1185,15 +1018,62 @@ export function Step4TaskSelection() {
         onDragLeave={handleDragLeaveDropZone}
         onDrop={handleDrop}
       >
-        <div className="px-4 pt-4 pb-3">
+        <div className="flex items-baseline gap-2 px-4 pt-4 pb-3">
           <h3 className="text-sm font-extrabold text-[var(--brand-b)]">우리학교 실천과제</h3>
+          <button
+            type="button"
+            className={`shrink-0 rounded border px-1.5 py-0 text-[9px] ${
+              showExampleCards
+                ? "border-slate-300 bg-slate-100 font-semibold text-slate-700 hover:bg-slate-200"
+                : "border-slate-200/80 font-normal text-slate-500 hover:bg-slate-100 hover:text-slate-600 hover:shadow-sm"
+            }`}
+            onClick={() => setShowExampleCards((v) => !v)}
+          >
+            {showExampleCards ? "예시 닫기" : "예시 보기"}
+          </button>
         </div>
 
         <div className="flex-1 overflow-x-auto px-4 pb-4">
-          {rightItems.length === 0 && extraTasks.length === 0 && !isAddingNewTask ? (
+          {showExampleCards ? (
+            /* 예시 카드 (예시 보기 클릭 시 과제 유무와 관계없이 먼저 표시) */
+            <div className="flex gap-2 flex-1 min-w-0">
+              {EXAMPLE_CARDS.map((card, idx) => (
+                <div
+                  key={idx}
+                  className="flex-shrink-0 w-[230px] rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col"
+                >
+                  <div className={`${getCategoryHeaderColor(card.category)} h-10 px-3 flex items-center justify-center text-center`}>
+                    <span className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight">
+                      {card.title}
+                    </span>
+                  </div>
+                  <div className="h-px bg-slate-200" />
+                  <div className="bg-white px-3 pt-1 pb-3 flex-1">
+                    <div className="mb-1">
+                      <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
+                        세부 실천 계획
+                      </span>
+                    </div>
+                    <div
+                      className="relative rounded bg-white py-1.5 px-2"
+                      style={{
+                        backgroundImage: NOTEBOOK_LINE_BG,
+                        backgroundAttachment: "local",
+                        minHeight: "110px",
+                      }}
+                    >
+                      <pre className="m-0 whitespace-pre-wrap font-normal text-[11px] leading-[22px] text-[color:rgba(75,70,41,0.9)]">
+                        {card.detailText}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : rightItems.length === 0 && extraTasks.length === 0 && !isAddingNewTask ? (
             <div className="flex gap-2 flex-1 min-w-0">
               {/* 새 카드 추가 인터페이스 */}
-              <div className="flex-shrink-0 w-[220px] flex items-start">
+              <div className="flex-shrink-0 w-[230px] flex items-start">
                 <button
                   type="button"
                   onClick={handleAddNewTask}
@@ -1208,8 +1088,17 @@ export function Step4TaskSelection() {
               </div>
               
               {/* 추천과제 드롭 영역 - 끝까지 확장 */}
-              <div className="flex-1 min-w-0 flex items-center justify-center text-sm text-[color:rgba(75,70,41,0.5)] py-12 border-2 border-dashed border-slate-200 rounded-lg">
-                추천과제를 드래그하여 여기에 놓으세요.
+              <div className="flex-1 min-w-0 flex items-center justify-center py-12 border-2 border-dashed border-slate-200 rounded-lg">
+                <div className="flex flex-col items-center gap-1 text-center text-sm text-[color:rgba(75,70,41,0.5)]">
+                  <span>추천 과제를 드래그하여 여기에 놓으세요.</span>
+                  <span>또는</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-medium text-slate-500">
+                      +
+                    </span>
+                    를 클릭하여 우리학교 실천과제를 입력하세요.
+                  </span>
+                </div>
               </div>
             </div>
           ) : (
@@ -1228,15 +1117,14 @@ export function Step4TaskSelection() {
                     .map((item, cardIndex) => {
                     const isEditingTitle = editingTaskTitleId === item.id;
                     const shouldShowTitleInput = isAddingNewTask && isEditingTitle;
-                    const itemInputsForItem = itemInputs[item.id] || [""];
-                    const hasSavedContent = itemInputsForItem.some((v) => v.trim().length > 0);
+                    const detailText = itemInputs[item.id] ?? "";
                     const isCardDragging = cardDraggingIndex === cardIndex;
                     const isCardDragOver = cardDragOverIndex === cardIndex;
                     
                     return (
                       <div
                         key={item.id}
-                        className="flex-shrink-0 w-[220px] relative"
+                        className="flex-shrink-0 w-[230px] relative"
                       >
                         {/* 하나의 카드 */}
                         <div className={`group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col transition-opacity duration-200 ${
@@ -1246,26 +1134,10 @@ export function Step4TaskSelection() {
                           <div 
                             className={`${getCategoryHeaderColor(item.category)} h-10 px-3 flex items-center justify-between relative transition-colors`}
                             draggable={!shouldShowTitleInput}
-                            onDragStart={shouldShowTitleInput ? undefined : (e) => {
-                              // 세부 실천과제 드래그 중이 아닐 때만 카드 드래그 시작
-                              if (detailDragIndexRef.current === null) {
-                                handleCardDragStart(cardIndex, e);
-                              } else {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }
-                            }}
+                            onDragStart={shouldShowTitleInput ? undefined : (e) => handleCardDragStart(cardIndex, e)}
                             onDragEnd={handleCardDragEnd}
                             onDragEnter={(e) => handleCardDragEnter(cardIndex, e)}
-                            onDragOver={(e) => {
-                              // 세부 실천과제 드래그 중이 아닐 때만 카드 드래그 오버 처리
-                              if (detailDragIndexRef.current === null) {
-                                handleCardDragOver(cardIndex, e);
-                              } else {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }
-                            }}
+                            onDragOver={(e) => handleCardDragOver(cardIndex, e)}
                             onDrop={() => handleCardDrop(cardIndex)}
                           >
                             {/* 드래그 핸들 - 타이틀 입력 중이 아닐 때만 표시 */}
@@ -1298,12 +1170,12 @@ export function Step4TaskSelection() {
                                 }}
                                 onBlur={handleSaveNewTask}
                                 placeholder="과제명 입력"
-                                className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight bg-transparent border-0 border-b-2 border-[color:rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] outline-none placeholder:text-[color:rgba(75,70,41,0.5)] inline-block px-1.5 py-0 flex-1"
+                                className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight bg-transparent border-0 border-b-2 border-[color:rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] outline-none placeholder:text-[color:rgba(75,70,41,0.5)] inline-block px-1.5 py-0 flex-1 text-center"
                                 style={{ minWidth: '100px', width: '100px' }}
                                 autoFocus
                               />
                             ) : (
-                              <span className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight flex-1">
+                              <span className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight flex-1 text-center">
                                 {item.label}
                               </span>
                             )}
@@ -1331,260 +1203,30 @@ export function Step4TaskSelection() {
                           {/* Header와 Body 사이 divider */}
                           <div className="h-px bg-slate-200"></div>
                           
-                          {/* Body 영역 */}
+                          {/* Body 영역 - 세부 실천 계획 (공책형 텍스트 영역) */}
                           <div className="bg-white px-3 pt-1 pb-3 flex-1">
-                            {/* 세부 실천 계획 라벨 */}
                             <div className="mb-1">
                               <span className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)]">
                                 세부 실천 계획
                               </span>
                             </div>
-                            
-                            {/* 세부 실천 계획 입력창 */}
-                            <div className="space-y-1.5">
-                            {itemInputsForItem.map((value, index) => {
-                              const isEmpty = value.trim().length === 0;
-                              const isEditing = detailEditingIndex === index && selectedItemId === item.id;
-                              const isDragging = detailDraggingIndex === index && detailDraggingItemId === item.id;
-                              const isAutoFocus = !hasSavedContent && index === 0 && selectedItemId === item.id;
-                              
-                              // 빈 입력창 필터링: 저장된 내용이 없으면 첫 번째만, 있으면 비어있고 편집 중이 아닌 것만 숨김
-                              if (!hasSavedContent && index !== 0) return null;
-                              if (hasSavedContent && isEmpty && !isEditing) return null;
-
-                              // 통일된 레이아웃: 드래그 핸들, 텍스트 영역, 삭제 버튼 항상 렌더링
-                              return (
-                                <div
-                                  key={index}
-                                  draggable={!isEmpty}
-                                  onDragStart={isEmpty ? undefined : (e) => {
-                                    e.stopPropagation(); // 카드 드래그 이벤트 전파 방지
-                                    handleDetailDragStart(index, item.id, e);
-                                  }}
-                                  onDragEnd={isEmpty ? undefined : (e) => {
-                                    if (e) e.stopPropagation();
-                                    handleDetailDragEnd();
-                                  }}
-                                  onDragEnter={isEmpty ? undefined : (e) => {
-                                    e.stopPropagation();
-                                    handleDetailDragEnter(index, e);
-                                  }}
-                                  onDragOver={isEmpty ? undefined : (e) => {
-                                    e.stopPropagation();
-                                    handleDetailDragOver(index, item.id, e);
-                                  }}
-                                  onDrop={isEmpty ? undefined : (e) => {
-                                    e.stopPropagation();
-                                    handleDetailDrop(index);
-                                  }}
-                                  className={`flex items-start gap-1.5 transition-opacity duration-200 ${
-                                    isDragging ? "opacity-50" : "opacity-100"
-                                  }`}
-                                >
-                                  {/* 드래그 핸들 - 세부과제 행만 드래그되도록 전파만 막음 (preventDefault 제거로 클릭/드래그 정상 동작) */}
-                                  <span 
-                                    className={`text-[9px] text-[color:rgba(75,70,41,0.55)] select-none mt-0.5 shrink-0 ${
-                                      isEmpty ? "opacity-30 cursor-default" : "cursor-move"
-                                    }`}
-                                    onMouseDown={(e) => {
-                                      if (!isEmpty) e.stopPropagation();
-                                    }}
-                                    style={{ width: '12px' }}
-                                  >
-                                    {isEmpty ? "⋮⋮" : "⋮⋮"}
-                                  </span>
-                                  
-                                  {/* 점 아이콘 */}
-                                  <span
-                                    className="h-1 w-1 rounded-full shrink-0 self-center"
-                                    style={{ backgroundColor: getCategoryDot(item.category) }}
-                                  />
-
-                                  {/* 텍스트 영역 - textarea를 항상 사용 (readOnly로 편집/보기 모드 전환) */}
-                                  <textarea
-                                    id={`detail-input-${item.id}-${index}`}
-                                    readOnly={!isEditing && !isAutoFocus}
-                                    className={`detail-input flex-1 border-0 border-b-2 px-1.5 py-0 text-[11px] font-normal leading-[22px] whitespace-pre-wrap resize-none overflow-hidden ${
-                                      isEditing || isAutoFocus
-                                        ? "text-[color:rgba(75,70,41,0.8)] focus:border-b-2 focus:outline-none"
-                                        : "text-[color:rgba(75,70,41,0.85)] cursor-text bg-transparent"
-                                    }`}
-                                    style={{
-                                      borderBottomColor: isEditing || isAutoFocus 
-                                        ? getCategoryUnderlineFocusColor(item.category)
-                                        : getCategoryUnderlineColor(item.category),
-                                      minHeight: "22px"
-                                    }}
-                                    onFocus={(e) => {
-                                      if (blurTimeoutRef.current) {
-                                        clearTimeout(blurTimeoutRef.current);
-                                        blurTimeoutRef.current = null;
-                                      }
-                                      setDetailEditingIndex(index);
-                                      setSelectedItemId(item.id);
-                                      const el = e.currentTarget;
-                                      const BASE = 22;
-                                      el.style.height = `${BASE}px`;
-                                      el.style.height = `${Math.max(BASE, el.scrollHeight)}px`;
-                                      // 포커스 시 언더라인 색상 변경
-                                      el.style.borderBottomColor = getCategoryUnderlineFocusColor(item.category);
-                                    }}
-                                    onBlur={(e) => {
-                                      // 블러 시 언더라인 색상 원래대로
-                                      e.currentTarget.style.borderBottomColor = getCategoryUnderlineColor(item.category);
-                                      blurTimeoutRef.current = setTimeout(() => {
-                                        setDetailEditingIndex(null);
-                                      }, 150);
-                                    }}
-                                    value={value}
-                                    placeholder="입력하세요"
-                                    onChange={(e) => {
-                                      if (isEditing || isAutoFocus) {
-                                        handleInputChange(item.id, index, e.target.value);
-                                        setDetailEditingIndex(index);
-                                        const el = e.currentTarget;
-                                        // 높이 자동 조절
-                                        const BASE = 22;
-                                        el.style.height = `${BASE}px`;
-                                        el.style.height = `${Math.max(BASE, el.scrollHeight)}px`;
-                                      }
-                                    }}
-                                    onClick={(e) => {
-                                      if (!isEditing && !isAutoFocus) {
-                                        e.stopPropagation();
-                                        if (blurTimeoutRef.current) {
-                                          clearTimeout(blurTimeoutRef.current);
-                                          blurTimeoutRef.current = null;
-                                        }
-                                        // 첫 번째 클릭: 텍스트 영역 선택
-                                        if (selectedItemId !== item.id) {
-                                          setSelectedItemId(item.id);
-                                        } else if (detailEditingIndex !== index) {
-                                          // 두 번째 클릭: 수정 모드 활성화
-                                          setDetailEditingIndex(index);
-                                          // 포커스 후 높이 조절
-                                          setTimeout(() => {
-                                            const el = e.currentTarget as HTMLTextAreaElement;
-                                            el.focus();
-                                            const BASE = 22;
-                                            el.style.height = `${BASE}px`;
-                                            el.style.height = `${Math.max(BASE, el.scrollHeight)}px`;
-                                          }, 0);
-                                        }
-                                      }
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (isEditing || isAutoFocus) {
-                                        if (e.key === "Enter" && !e.shiftKey) {
-                                          e.preventDefault();
-                                          if (blurTimeoutRef.current) {
-                                            clearTimeout(blurTimeoutRef.current);
-                                            blurTimeoutRef.current = null;
-                                          }
-                                          
-                                          const nextIndex = index + 1;
-                                          const hasNextTask = nextIndex < itemInputsForItem.length && itemInputsForItem[nextIndex]?.trim().length > 0;
-                                          
-                                          if (hasNextTask) {
-                                            setDetailEditingIndex(nextIndex);
-                                            setSelectedItemId(item.id);
-                                            setTimeout(() => {
-                                              const targetArea = document.getElementById(`detail-input-${item.id}-${nextIndex}`) as HTMLTextAreaElement;
-                                              if (targetArea) {
-                                                targetArea.focus();
-                                                const BASE = 22;
-                                                targetArea.style.height = `${BASE}px`;
-                                                targetArea.style.height = `${Math.max(BASE, targetArea.scrollHeight)}px`;
-                                              }
-                                            }, 50);
-                                          } else {
-                                            const newIndex = itemInputsForItem.length;
-                                            setItemInputs((prev) => {
-                                              const inputs = prev[item.id] || [""];
-                                              return { ...prev, [item.id]: [...inputs, ""] };
-                                            });
-                                            setDetailEditingIndex(newIndex);
-                                            setSelectedItemId(item.id);
-                                            setTimeout(() => {
-                                              const targetArea = document.getElementById(`detail-input-${item.id}-${newIndex}`) as HTMLTextAreaElement;
-                                              if (targetArea) {
-                                                targetArea.focus();
-                                                const BASE = 22;
-                                                targetArea.style.height = `${BASE}px`;
-                                                targetArea.style.height = `${Math.max(BASE, targetArea.scrollHeight)}px`;
-                                              }
-                                            }, 100);
-                                          }
-                                        }
-                                      }
-                                    }}
-                                    autoFocus={isAutoFocus}
-                                  />
-
-                                  {/* 삭제 버튼 - 항상 렌더링 (빈 항목일 때는 비활성화) */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      if (!isEmpty) {
-                                        e.stopPropagation();
-                                        handleRemoveInput(item.id, index);
-                                      }
-                                    }}
-                                    className={`inline-flex h-3.5 w-3.5 items-center justify-center shrink-0 mt-0.5 ${
-                                      isEmpty 
-                                        ? "opacity-30 cursor-default pointer-events-none" 
-                                        : "cursor-pointer text-[10px] leading-none text-[color:rgba(75,70,41,0.6)] hover:text-[color:rgba(75,70,41,0.85)]"
-                                    }`}
-                                    aria-label="세부 실천 계획 삭제"
-                                    disabled={isEmpty}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              );
-                            })}
-                            
-                            {/* 입력창 추가 버튼 - 표식과 같은 위치로 정렬 */}
-                            <div className="flex items-start gap-1.5">
-                              {/* 드래그 핸들 공간 (비어있음) */}
-                              <span className="w-[12px] shrink-0"></span>
-                              
-                              {/* 표식 위치에 과제 추가 버튼 배치 */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  
-                                  if (blurTimeoutRef.current) {
-                                    clearTimeout(blurTimeoutRef.current);
-                                    blurTimeoutRef.current = null;
-                                  }
-                                  
-                                  const currentLength = itemInputsForItem.length;
-                                  const newIndex = currentLength;
-                                  
-                                  handleAddInput(item.id);
-                                  setDetailEditingIndex(newIndex);
-                                  setSelectedItemId(item.id);
-                                  
-                                  // 정확한 textarea에 포커스 (id로 찾기)
-                                  setTimeout(() => {
-                                    const targetArea = document.getElementById(`detail-input-${item.id}-${newIndex}`) as HTMLTextAreaElement;
-                                    if (targetArea) {
-                                      targetArea.focus();
-                                      const BASE = 22;
-                                      targetArea.style.height = `${BASE}px`;
-                                      targetArea.style.height = `${Math.max(BASE, targetArea.scrollHeight)}px`;
-                                    }
-                                  }, 50);
-                                }}
-                                className="flex items-center gap-1 px-0.5 py-0.5 text-[9px] font-semibold text-[color:rgba(75,70,41,0.7)] hover:text-[var(--brand-b)] cursor-pointer transition-colors self-start mt-1.5"
-                              >
-                                <img src="/icons/add.svg" alt="" className="h-2.5 w-2.5 opacity-70" />
-                                <span>과제 추가</span>
-                              </button>
-                            </div>
+                            <div
+                              className="relative rounded bg-white"
+                              style={{
+                                backgroundImage: NOTEBOOK_LINE_BG,
+                                backgroundAttachment: "local",
+                              }}
+                            >
+                              <textarea
+                                id={`detail-input-${item.id}`}
+                                value={detailText}
+                                onChange={(e) => handleDetailTextChange(item.id, e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="입력하세요"
+                                rows={5}
+                                className="relative w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[11px] font-normal leading-[22px] text-[color:rgba(75,70,41,0.9)] placeholder:text-slate-400 focus:outline-none"
+                                style={{ minHeight: "110px" }}
+                              />
                             </div>
                           </div>
                         </div>
@@ -1594,7 +1236,7 @@ export function Step4TaskSelection() {
                   
                   {/* 새 하늘색 카드 입력 인터페이스 (타이틀 입력 중일 때, 기존 타이틀 입력 카드가 없을 때만) */}
                   {isAddingNewTask && !editingTaskTitleId && (
-                    <div className="flex-shrink-0 w-[220px] relative">
+                    <div className="flex-shrink-0 w-[230px] relative">
                       <div className="group rounded-xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden min-h-[160px] flex flex-col">
                         <div className="bg-[color:rgba(135,206,235,0.25)] group-hover:bg-[color:rgba(135,206,235,0.35)] h-10 px-3 flex items-center justify-between relative transition-colors">
                           <input
@@ -1616,7 +1258,7 @@ export function Step4TaskSelection() {
                             }}
                             onBlur={handleSaveNewTask}
                             placeholder="과제명 입력"
-                            className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight bg-transparent border-0 border-b-2 border-[color:rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] outline-none placeholder:text-[color:rgba(75,70,41,0.5)] inline-block px-1.5 py-0"
+                            className="text-[11px] font-extrabold text-[color:rgba(75,70,41,0.85)] leading-tight bg-transparent border-0 border-b-2 border-[color:rgba(75,70,41,0.2)] focus:border-[var(--brand-b)] outline-none placeholder:text-[color:rgba(75,70,41,0.5)] inline-block px-1.5 py-0 text-center"
                             style={{ minWidth: '100px', width: '100px' }}
                             autoFocus
                           />
@@ -1634,7 +1276,7 @@ export function Step4TaskSelection() {
                   )}
                   
                   {/* 새 카드 추가 버튼 (항상 표시) */}
-                  <div className="flex-shrink-0 w-[220px] flex items-start">
+                  <div className="flex-shrink-0 w-[230px] flex items-start">
                     <button
                       type="button"
                       onClick={handleAddNewTask}
@@ -1654,7 +1296,7 @@ export function Step4TaskSelection() {
         </div>
       </div>
 
-      {/* 다음으로 버튼 */}
+      {/* 저장하기 버튼 */}
       <div className="mt-6 flex items-center justify-end gap-3">
         <button
           type="button"
@@ -1668,7 +1310,7 @@ export function Step4TaskSelection() {
           className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-extrabold text-white shadow-sm hover:brightness-125 hover:shadow-md hover:scale-105 transition-all duration-200 cursor-pointer"
           onClick={validateAndNext}
         >
-          다음으로
+          저장하기
         </button>
       </div>
 

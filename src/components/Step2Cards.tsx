@@ -126,13 +126,11 @@ function Step2Section({
   card,
   selected,
   onToggle,
-  isWide,
   showRightDivider,
 }: {
   card: Step2Card;
   selected: Step2SelectionState;
   onToggle: (id: string) => void;
-  isWide?: boolean;
   showRightDivider?: boolean;
 }) {
   return (
@@ -172,12 +170,7 @@ function Step2Section({
                   ].join(" ")}
                 />
                 <span
-                  className={[
-                    "block min-w-0 leading-5",
-                    isWide
-                      ? "whitespace-nowrap text-[11px] tracking-tighter"
-                      : "truncate whitespace-nowrap",
-                  ].join(" ")}
+                  className="block min-w-0 truncate whitespace-nowrap leading-5 text-[12px]"
                   title={it.label}
                 >
                   {it.label}
@@ -231,14 +224,13 @@ export function Step2Cards() {
   return (
     <div className="w-full">
       <div className="rounded-2xl border border-slate-200 bg-white/60 p-4 shadow-sm backdrop-blur">
-        <div className="grid grid-cols-1 gap-y-6 lg:grid-cols-3 lg:gap-x-10 lg:gap-y-0">
+        <div className="grid grid-cols-1 gap-y-6 lg:grid-cols-[0.96fr_0.96fr_1.08fr] lg:gap-x-10 lg:gap-y-0">
           {CARDS.map((card, idx) => (
             <Step2Section
               key={card.title}
               card={card}
               selected={selected}
               onToggle={toggle}
-              isWide={idx === 2}
               showRightDivider={idx < 2}
             />
           ))}

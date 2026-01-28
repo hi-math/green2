@@ -26,7 +26,7 @@ type TaskItem = {
 type Step4Snapshot = {
   rightItems: TaskItem[];
   extraTasks: TaskItem[];
-  itemInputs: Record<string, string[]>;
+  itemInputs: Record<string, string[] | string>;
   reductionPercent: number;
 };
 
@@ -111,7 +111,17 @@ export default function PreviewPage() {
       if (snap) {
         setRightItems(snap.rightItems || []);
         setExtraTasks(snap.extraTasks || []);
-        setItemInputs(snap.itemInputs || {});
+        // itemInputs: string(공책형) → string[] 로 정규화
+        const raw = snap.itemInputs || {};
+        const normalized: Record<string, string[]> = {};
+        for (const [id, val] of Object.entries(raw)) {
+          if (Array.isArray(val)) {
+            normalized[id] = val;
+          } else if (typeof val === "string") {
+            normalized[id] = val.trim() ? val.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+          }
+        }
+        setItemInputs(normalized);
         setReductionPercent(snap.reductionPercent || 10);
       }
     } catch (error) {

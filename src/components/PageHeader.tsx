@@ -20,7 +20,7 @@ export function PageHeader({ title, showIntro = true, introText, actions }: Page
       {showIntro ? (
         <div className="min-w-0 flex-1">
           {introText ? (
-            <div className="text-[12px] leading-5 text-[color:rgba(75,70,41,0.7)]">
+            <div className="text-sm leading-5 text-[color:rgba(75,70,41,0.7)]">
               <div className="font-extrabold text-[var(--brand-b)]">
                 {introText.split('\n\n')[0]}
               </div>
@@ -31,7 +31,7 @@ export function PageHeader({ title, showIntro = true, introText, actions }: Page
               )}
             </div>
           ) : (
-            <div className="text-[12px] leading-5 text-[color:rgba(75,70,41,0.7)]">
+            <div className="text-sm leading-5 text-[color:rgba(75,70,41,0.7)]">
               <div className="font-extrabold text-[var(--brand-b)]">
                 시작하기 전에
               </div>
