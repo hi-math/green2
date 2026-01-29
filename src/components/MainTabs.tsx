@@ -670,7 +670,10 @@ function SchoolNameRow({
   }) => void | Promise<void>;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [items, setItems] = useState<
     Array<{ name: string; level: string; region: string; office: string }>
   >([]);
@@ -702,6 +705,21 @@ function SchoolNameRow({
     return () => clearTimeout(t);
   }, [fetchUrl]);
 
+  // When items change, reset highlight to first item
+  useEffect(() => {
+    setHighlightedIndex(items.length > 0 ? 0 : -1);
+  }, [items]);
+
+  // Keep itemRefs length in sync
+  itemRefs.current = items.length ? itemRefs.current.slice(0, items.length) : [];
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (!open || highlightedIndex < 0 || highlightedIndex >= items.length) return;
+    const el = itemRefs.current[highlightedIndex];
+    if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [open, highlightedIndex, items.length]);
+
   // Close dropdown when clicking outside (more reliable than relying on input blur)
   useEffect(() => {
     if (!open) return;
@@ -722,6 +740,7 @@ function SchoolNameRow({
   const pick = (it: { name: string; level: string; region: string; office: string }) => {
     onChange(it.name);
     setOpen(false);
+    setHighlightedIndex(-1);
     void onPicked?.(it);
   };
 
@@ -742,12 +761,25 @@ function SchoolNameRow({
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 setOpen(false);
+                setHighlightedIndex(-1);
                 return;
               }
-              // If only one candidate remains, Enter should accept it.
-              if (e.key === "Enter" && open && items.length === 1) {
-                e.preventDefault();
-                pick(items[0]);
+              if (open && items.length > 0) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  if (e.key === "ArrowDown") {
+                    setHighlightedIndex((i) => (i < items.length - 1 ? i + 1 : 0));
+                  } else {
+                    setHighlightedIndex((i) => (i <= 0 ? items.length - 1 : i - 1));
+                  }
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  const idx = highlightedIndex >= 0 ? highlightedIndex : 0;
+                  pick(items[idx]);
+                  return;
+                }
               }
             }}
             onFocus={() => setOpen(true)}
@@ -764,17 +796,30 @@ function SchoolNameRow({
           />
 
           {open && items.length > 0 ? (
-            <div className="absolute left-0 top-11 z-20 w-full max-w-[520px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-              {items.map((it) => (
+            <div
+              ref={listRef}
+              className="absolute left-0 top-11 z-20 max-h-64 w-full max-w-[520px] overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+              role="listbox"
+              aria-activedescendant={highlightedIndex >= 0 ? `school-option-${highlightedIndex}` : undefined}
+            >
+              {items.map((it, idx) => (
                 <button
                   key={`${it.name}-${it.level}-${it.region}-${it.office}`}
+                  id={highlightedIndex === idx ? `school-option-${idx}` : undefined}
+                  ref={(el) => { itemRefs.current[idx] = el; }}
                   type="button"
-                  className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50"
+                  role="option"
+                  aria-selected={highlightedIndex === idx}
+                  className={[
+                    "flex w-full min-w-0 items-start justify-between gap-3 px-3 py-2 text-left",
+                    highlightedIndex === idx ? "bg-[color:rgba(185,213,50,0.2)]" : "hover:bg-slate-50",
+                  ].join(" ")}
                   onMouseDown={(e) => {
                     // prevent input blur from closing before selection applies
                     e.preventDefault();
                     pick(it);
                   }}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
                 >
                   <span className="text-sm font-extrabold text-[var(--brand-b)]">
                     {it.name}
