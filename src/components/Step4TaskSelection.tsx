@@ -182,6 +182,24 @@ function loadStep2FromSession(): Step2SelectionState {
   }
 }
 
+type Step4Snapshot = {
+  rightItems: TaskItem[];
+  extraTasks: TaskItem[];
+  itemInputs: Record<string, string>;
+  reductionPercent: number;
+};
+
+function loadStep4FromSession(): Step4Snapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(STEP4_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as Step4Snapshot;
+  } catch {
+    return null;
+  }
+}
+
 function toNumLoose(value: unknown): number | null {
   const s = String(value ?? "").trim();
   if (!s) return null;
@@ -274,13 +292,23 @@ export function Step4TaskSelection() {
     }
   }, []);
 
-  // Step2 데이터 로드 및 초기화
+  // Step2 데이터 로드: 왼쪽(미선택) 항목만 설정
   useEffect(() => {
     const step2Selections = loadStep2FromSession();
     const uncheckedItems = ALL_ITEMS.filter((item) => !step2Selections[item.id]);
     setLeftItems(uncheckedItems);
-    setRightItems([]);
-    setExtraTasks([]);
+  }, []);
+
+  // Step4 저장 데이터 로드 (5→4 복귀 시 입력 데이터 복원)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const snap = loadStep4FromSession();
+    if (snap) {
+      setRightItems(snap.rightItems ?? []);
+      setExtraTasks(snap.extraTasks ?? []);
+      setItemInputs(snap.itemInputs ?? {});
+      setReductionPercent(snap.reductionPercent ?? 10);
+    }
   }, []);
 
   const fmt0 = useMemo(() => {

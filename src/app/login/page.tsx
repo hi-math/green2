@@ -25,12 +25,12 @@ export default function LoginPage() {
         <div className="flex flex-col items-center justify-between bg-white p-8 text-center">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight text-[var(--brand-b)] mb-3">
-              탄소중립 실천 자가진단
+              학교 탄소중립 실천 자가진단
             </h1>
             <p className="text-base text-[color:rgba(75,70,41,0.7)] leading-relaxed">
               우리학교의 탄소중립 실천 현황을 확인하고
               <br />
-              실천 계획을 세워보세요
+              실천 계획을 세워 보세요.
             </p>
           </div>
           <button

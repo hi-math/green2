@@ -87,7 +87,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             aria-label="홈으로 이동"
           >
             <img
-              src="/logo.png"
+              src="/logo3.png"
               alt="로고"
               className="h-16 w-auto"
             />
