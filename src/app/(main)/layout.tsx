@@ -79,22 +79,22 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     <div className="flex h-[calc(100vh/var(--ui-scale))] flex-col overflow-hidden bg-transparent font-sans text-slate-900">
       <header className="w-full shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur relative z-50 opacity-100 visible">
         <div className="h-1 w-full bg-gradient-to-r from-[var(--brand-a)] to-[var(--brand-b)]" />
-        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[240px_1fr] items-center gap-4 px-4 py-2">
+        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[minmax(300px,auto)_1fr] items-center gap-4 px-4 py-2">
           <button
             type="button"
-            className="flex h-16 w-full items-center cursor-pointer"
+            className="flex h-[4.2rem] w-fit min-w-0 items-center cursor-pointer"
             onClick={() => router.push("/1")}
             aria-label="홈으로 이동"
           >
             <img
-              src="/logo3.png"
-              alt="로고"
-              className="h-16 w-auto"
-            />
+                src="/logo5.png"
+                alt="로고"
+                className="block h-[4.2rem] w-auto shrink-0 object-contain object-left"
+              />
           </button>
 
           <div className="w-full">
-            <div className="mx-auto w-[60%]">
+            <div className="mx-auto w-[75%] min-w-0">
               <Stepper
                 steps={[
                   "1단계\n학교 정보 입력",
