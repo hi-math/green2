@@ -107,10 +107,6 @@ const getCategoryUnderlineFocusColor = (category: string) => {
 
 const CATEGORY_ORDER = ["실천 행동의 일상화", "실천 문화 확산", "학교 환경 조성"];
 
-/** 공책형 영역 실선 언더라인 배경 (22px 간격, 1px 실선) */
-const NOTEBOOK_LINE_BG =
-  "repeating-linear-gradient(transparent, transparent 22px, rgba(75,70,41,0.12) 22px, rgba(75,70,41,0.12) 23px)";
-
 /** 예시 보기용 카드 데이터 (읽기 전용, 공책형 텍스트 형식) */
 const EXAMPLE_CARDS = [
   {
@@ -1055,12 +1051,8 @@ export function Step4TaskSelection() {
                       </span>
                     </div>
                     <div
-                      className="relative rounded bg-white py-1.5 px-2"
-                      style={{
-                        backgroundImage: NOTEBOOK_LINE_BG,
-                        backgroundAttachment: "local",
-                        minHeight: "110px",
-                      }}
+                      className="relative rounded bg-white py-1.5 px-2 border border-[rgba(75,70,41,0.12)]"
+                      style={{ minHeight: "110px" }}
                     >
                       <pre className="m-0 whitespace-pre-wrap font-normal text-[11px] leading-[22px] text-[color:rgba(75,70,41,0.9)]">
                         {card.detailText}
@@ -1210,13 +1202,7 @@ export function Step4TaskSelection() {
                                 세부 실천 계획
                               </span>
                             </div>
-                            <div
-                              className="relative rounded bg-white"
-                              style={{
-                                backgroundImage: NOTEBOOK_LINE_BG,
-                                backgroundAttachment: "local",
-                              }}
-                            >
+                            <div className="relative rounded bg-white border border-[rgba(75,70,41,0.12)]">
                               <textarea
                                 id={`detail-input-${item.id}`}
                                 value={detailText}

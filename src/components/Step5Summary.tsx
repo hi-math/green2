@@ -90,8 +90,6 @@ export function Step5Summary() {
   const [itemInputs, setItemInputs] = useState<Record<string, string[]>>({});
   const [reductionPercent, setReductionPercent] = useState(10);
 
-  const [isDownloading, setIsDownloading] = useState(false);
-
   // Step1 데이터 로드
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -148,54 +146,6 @@ export function Step5Summary() {
     router.push("/plan/preview");
   };
 
-  // PDF 다운로드
-  const handleDownload = async () => {
-    setIsDownloading(true);
-    try {
-      const categories = groupedTasks.map((group) => ({
-        name: group.category,
-        items: group.items.map((item) => ({
-          label: item.label,
-          details: (itemInputs[item.id] || []).filter((d) => d.trim().length > 0),
-        })),
-      }));
-
-      const payload = {
-        schoolName: schoolName || "○○학교",
-        targetPct: reductionPercent,
-        baselineYear,
-        nextYear,
-        usageValues,
-        categories,
-      };
-
-      const res = await fetch("/api/pdf/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error("PDF 생성 실패");
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `탄소중립_실천계획서_${schoolName || "학교"}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Download error:", error);
-      alert("PDF 다운로드 중 오류가 발생했습니다.");
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] w-full">
       {/* 로고 이미지 + 텍스트 + 버튼 */}
@@ -211,35 +161,12 @@ export function Step5Summary() {
         
         {/* 버튼 영역 */}
         <div className="mt-8 flex flex-col sm:flex-row items-center gap-4">
-          {/* 미리보기 버튼 */}
           <button
             type="button"
-            className="inline-flex h-11 items-center justify-center rounded-lg border-2 border-[var(--brand-b)] bg-white px-5 text-sm font-semibold text-[var(--brand-b)] shadow-sm hover:bg-[var(--brand-b)]/5 hover:shadow-md transition-all duration-200 cursor-pointer whitespace-pre-line text-center"
+            className="inline-flex h-12 min-w-[280px] items-center justify-center rounded-xl bg-[var(--brand-b)] px-6 py-3 text-base font-bold text-white shadow-lg shadow-[var(--brand-b)]/25 hover:brightness-110 hover:shadow-xl hover:shadow-[var(--brand-b)]/30 active:brightness-95 transition-all duration-200 cursor-pointer text-center"
             onClick={handlePreview}
           >
-            우리학교 탄소중립{'\n'}실천 계획서 미리보기
-          </button>
-
-          {/* PDF 다운로드 버튼 */}
-          <button
-            type="button"
-            className="inline-flex h-11 items-center justify-center rounded-lg bg-[var(--brand-b)] px-5 text-sm font-semibold text-white shadow-sm hover:brightness-110 hover:shadow-md transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-pre-line text-center"
-            onClick={handleDownload}
-            disabled={isDownloading}
-          >
-            {isDownloading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                PDF 생성 중...
-              </>
-            ) : (
-              <>
-                우리학교 탄소중립{'\n'}실천 계획서 PDF 다운로드
-              </>
-            )}
+            우리학교 탄소중립 실천 계획서 출력하기
           </button>
         </div>
         

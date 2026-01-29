@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { pdfjs, Document, Page } from "react-pdf";
+import { usePlanHeaderRight } from "../layout";
+
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const STEP1_STORAGE_KEY = "carbonapp.step1";
 const STEP4_STORAGE_KEY = "carbonapp.step4";
@@ -83,7 +87,19 @@ export default function PreviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [pageWidth, setPageWidth] = useState(0);
+  const [dprBoost, setDprBoost] = useState(2);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const setHeaderRight = usePlanHeaderRight()?.setHeaderRight;
 
+  // 캔버스 픽셀 밀도: devicePixelRatio 기반 (1.5~3, 선명도용)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const dpr = window.devicePixelRatio || 1;
+    setDprBoost(Math.min(3, Math.max(1.5, dpr * 1.5)));
+  }, []);
 
   // Step1 데이터 로드
   useEffect(() => {
@@ -223,45 +239,154 @@ export default function PreviewPage() {
     };
   }, [schoolName, emissions, energyYearUsed, rightItems, extraTasks, itemInputs, reductionPercent]);
 
+  // PDF 다운로드 (헤더 버튼용)
+  const handleDownload = useCallback(async () => {
+    const usageValues = {
+      electric: toNumLoose(emissions?.electric ?? "") ?? 0,
+      gas: toNumLoose(emissions?.gas ?? "") ?? 0,
+      water: toNumLoose(emissions?.water ?? "") ?? 0,
+    };
+    const baselineYear = typeof energyYearUsed === "number" ? energyYearUsed : new Date().getFullYear() - 1;
+    const nextYear = baselineYear + 1;
+    const allTasks = [...rightItems, ...extraTasks];
+    const categories = allTasks.reduce((acc, item) => {
+      const cat = item.category || "기타";
+      if (!acc[cat]) acc[cat] = { name: cat, items: [] };
+      acc[cat].items.push({
+        label: item.label,
+        details: (itemInputs[item.id] || []).filter((d) => String(d).trim().length > 0),
+      });
+      return acc;
+    }, {} as Record<string, { name: string; items: { label: string; details: string[] }[] }>);
+    const payload = {
+      schoolName: schoolName || "○○학교",
+      targetPct: reductionPercent,
+      baselineYear,
+      nextYear,
+      usageValues,
+      categories: Object.values(categories),
+    };
+    setDownloadLoading(true);
+    try {
+      const res = await fetch("/api/pdf/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `다운로드 실패 (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `탄소중립_실천계획서_${payload.schoolName || "학교"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF 다운로드 오류:", err);
+    } finally {
+      setDownloadLoading(false);
+    }
+  }, [schoolName, emissions, energyYearUsed, rightItems, extraTasks, itemInputs, reductionPercent]);
+
+  // 헤더 오른쪽에 다운로드 버튼 표시
+  useEffect(() => {
+    if (!setHeaderRight) return;
+    setHeaderRight(
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={downloadLoading || isLoading}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--brand-b)] bg-[var(--brand-b)] px-2.5 py-1 text-xs font-medium text-white shadow-sm transition-all hover:bg-[color:rgba(75,70,41,0.9)] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap"
+      >
+        {downloadLoading ? (
+          <>
+            <svg className="h-3.5 w-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            다운로드 중...
+          </>
+        ) : (
+          <>
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            다운로드
+          </>
+        )}
+      </button>
+    );
+    return () => setHeaderRight(null);
+  }, [setHeaderRight, handleDownload, downloadLoading, isLoading]);
+
+  // PDF 렌더 영역 너비만 측정 (스크롤은 layout의 main이 담당)
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setPageWidth(Math.min(el.clientWidth, 1200));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div className="w-full max-w-[1200px] mx-auto px-4 h-full">
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <svg className="animate-spin h-8 w-8 text-[var(--brand-b)]" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          <p className="text-sm font-semibold text-[var(--brand-b)]">PDF 미리보기 생성 중...</p>
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <p className="text-sm font-semibold text-red-600">{error}</p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 rounded-lg bg-[var(--brand-b)] text-white text-sm font-semibold hover:brightness-110"
-          >
-            다시 시도
-          </button>
-        </div>
-      ) : pdfUrl ? (
-        <div className="w-full flex flex-col items-center h-full">
-          {/* PDF iframe: 반응형 높이 설정 */}
-          <iframe
-            src={pdfUrl}
-            className="border border-slate-200 rounded-lg shadow-sm bg-white"
-            style={{
-              width: "90%",
-              height: "60%", // 부모 컨테이너 높이의 60%
-            }}
-            title="PDF 미리보기"
-            onError={(e) => {
-              console.error("PDF iframe 로드 오류:", e);
+    <div className="w-full px-4 pb-10">
+      <div className="mx-auto w-full max-w-[1200px]" ref={wrapRef}>
+        {isLoading ? (
+          <div className="flex items-center justify-center min-h-[200px] py-20 gap-4 flex-col">
+            <svg className="animate-spin h-8 w-8 text-[var(--brand-b)]" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <p className="text-sm font-semibold text-[var(--brand-b)]">PDF 미리보기 생성 중...</p>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center min-h-[200px] py-20 gap-4 flex-col">
+            <p className="text-sm font-semibold text-red-600">{error}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-lg bg-[var(--brand-b)] text-white text-sm font-semibold hover:brightness-110"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : pdfUrl ? (
+          <Document
+            file={pdfUrl}
+            onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+            onLoadError={(e) => {
+              console.error("PDF 로드 오류:", e);
               setError("PDF를 로드할 수 없습니다.");
             }}
-          />
-        </div>
-      ) : null}
+          >
+            {Array.from({ length: numPages }, (_, i) => {
+              const w = pageWidth > 0 ? Math.round(pageWidth * 0.8) : undefined;
+              return (
+                <div
+                  key={i}
+                  className="mb-6 mx-auto rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden"
+                  style={w ? { width: w } : undefined}
+                >
+                  <Page
+                    pageNumber={i + 1}
+                    width={w}
+                    devicePixelRatio={dprBoost}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                  />
+                </div>
+              );
+            })}
+          </Document>
+        ) : null}
+      </div>
     </div>
   );
 }

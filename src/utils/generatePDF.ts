@@ -74,13 +74,13 @@ export function generatePDF(data: PDFData) {
     doc.setFont(fontFamily, fontNormal);
     doc.text(`${data.year}년 기준`, pageWidth - margin, yPos, { align: "right" });
   }
-  yPos += 8;
+  yPos += 6;
 
   // 학교명
   doc.setFontSize(9);
   doc.setFont(fontFamily, fontNormal);
   doc.text(`학교명 : ${data.schoolName || "-"}`, margin, yPos);
-  yPos += 7;
+  yPos += 6;
 
   // 학교 기본정보 테이블
   autoTable(doc, {
@@ -110,7 +110,7 @@ export function generatePDF(data: PDFData) {
     },
     margin: { left: margin, right: margin },
   });
-  yPos = (doc as any).lastAutoTable.finalY + 10;
+  yPos = (doc as any).lastAutoTable.finalY + 6;
 
   // 2. 탄소 배출 관련 정보 섹션
   doc.setFontSize(11);
@@ -123,7 +123,7 @@ export function generatePDF(data: PDFData) {
     doc.setFont(fontFamily, fontNormal);
     doc.text(`${data.year}년 기준`, pageWidth - margin, yPos, { align: "right" });
   }
-  yPos += 8;
+  yPos += 6;
 
   // 탄소 배출 관련 정보 테이블
   autoTable(doc, {
@@ -153,13 +153,13 @@ export function generatePDF(data: PDFData) {
     },
     margin: { left: margin, right: margin },
   });
-  yPos = (doc as any).lastAutoTable.finalY + 10;
+  yPos = (doc as any).lastAutoTable.finalY + 6;
 
   // 3. 탄소 배출량 섹션
   doc.setFontSize(11);
   doc.setFont(fontFamily, fontBold);
   doc.text("● 탄소 배출량", margin, yPos);
-  yPos += 8;
+  yPos += 6;
 
   // 탄소 배출량 테이블 (특별한 레이아웃: 왼쪽 큰 셀 + 오른쪽 2x2 그리드)
   const tableStartY = yPos;
@@ -217,72 +217,138 @@ export function generatePDF(data: PDFData) {
   // 빈 셀 (두 번째 행, 두 번째 열)
   doc.rect(rightX + cellWidth, tableY + cellHeight, cellWidth, cellHeight);
 
-  yPos = tableY + cellHeight * 3 + 10;
+  yPos = tableY + cellHeight * 3 + 6;
 
-  // 4. 탄소 중립 실천 내용 섹션
+  // 4. 탄소 중립 실천 내용 섹션 (줄간격 약 20% 축소)
+  doc.setLineHeightFactor(0.92);
+
   doc.setFontSize(11);
   doc.setFont(fontFamily, fontBold);
   doc.text("● 탄소 중립 실천 내용", margin, yPos);
-  yPos += 8;
+  yPos += 6;
 
-  // 실천 내용 테이블
-  const practiceRows: any[] = [];
-  
-  // 실천행동
-  const dailyOngoing = data.dailySelected.length > 0 
-    ? data.dailySelected.map(item => `• ${item}`).join("\n")
-    : "";
-  const dailyPlanned = data.dailyPlanned.length > 0
-    ? data.dailyPlanned.map(item => `• ${item}`).join("\n")
-    : "";
-  practiceRows.push(["실천행동", dailyOngoing, dailyPlanned]);
+  // 세부 실천계획: 4줄 초과분은 다음 페이지로, 표식(•) 없음
+  const maxLinesPerCell = 4;
 
-  // 실천문화
-  const cultureOngoing = data.cultureSelected.length > 0
-    ? data.cultureSelected.map(item => `• ${item}`).join("\n")
-    : "";
-  const culturePlanned = data.culturePlanned.length > 0
-    ? data.culturePlanned.map(item => `• ${item}`).join("\n")
-    : "";
-  practiceRows.push(["실천문화", cultureOngoing, culturePlanned]);
+  const practiceRows: [string, string, string][] = [];
 
-  // 환경구성
-  const envOngoing = data.envSelected.length > 0
-    ? data.envSelected.map(item => `• ${item}`).join("\n")
-    : "";
-  const envPlanned = data.envPlanned.length > 0
-    ? data.envPlanned.map(item => `• ${item}`).join("\n")
-    : "";
-  practiceRows.push(["환경구성", envOngoing, envPlanned]);
+  const toLines = (arr: string[]) =>
+    arr.length > 0 ? arr.join("\n") : "";
 
-  autoTable(doc, {
-    startY: yPos,
-    head: [["영역", "실천 중인 과제", "실천 예정 과제"]],
-    body: practiceRows,
-    theme: "grid",
-    headStyles: {
-      fillColor: [255, 255, 255],
-      textColor: [0, 0, 0],
-      fontStyle: fontBold,
-      fontSize: 9,
-      font: fontFamily,
-    },
-    bodyStyles: {
-      fontSize: 8,
-      font: fontFamily,
-      cellPadding: 4,
-      valign: "top",
-    },
-    columnStyles: {
-      0: { cellWidth: tableWidth * 0.15, fontStyle: fontBold },
-      1: { cellWidth: tableWidth * 0.425 },
-      2: { cellWidth: tableWidth * 0.425 },
-    },
-    styles: {
-      font: fontFamily,
-    },
-    margin: { left: margin, right: margin },
-  });
+  const chunkLines = (text: string, maxLines: number): string[] => {
+    if (!text.trim()) return [""];
+    const lines = text.split("\n").filter((l) => l.trim().length > 0);
+    const chunks: string[] = [];
+    for (let i = 0; i < lines.length; i += maxLines) {
+      chunks.push(lines.slice(i, i + maxLines).join("\n"));
+    }
+    return chunks.length ? chunks : [""];
+  };
+
+  // 실천행동 (표식 없음)
+  const dailyOngoing = toLines(data.dailySelected);
+  const dailyPlanned = toLines(data.dailyPlanned);
+  const dailyOngoingChunks = chunkLines(dailyOngoing, maxLinesPerCell);
+  const dailyPlannedChunks = chunkLines(dailyPlanned, maxLinesPerCell);
+  const dailyChunkCount = Math.max(1, dailyOngoingChunks.length, dailyPlannedChunks.length);
+  for (let i = 0; i < dailyChunkCount; i++) {
+    const label = i === 0 ? "실천행동" : "";
+    practiceRows.push([
+      label,
+      dailyOngoingChunks[i] ?? "",
+      dailyPlannedChunks[i] ?? "",
+    ]);
+  }
+
+  // 실천문화 (표식 없음)
+  const cultureOngoing = toLines(data.cultureSelected);
+  const culturePlanned = toLines(data.culturePlanned);
+  const cultureOngoingChunks = chunkLines(cultureOngoing, maxLinesPerCell);
+  const culturePlannedChunks = chunkLines(culturePlanned, maxLinesPerCell);
+  const cultureChunkCount = Math.max(1, cultureOngoingChunks.length, culturePlannedChunks.length);
+  for (let i = 0; i < cultureChunkCount; i++) {
+    const label = i === 0 ? "실천문화" : "";
+    practiceRows.push([
+      label,
+      cultureOngoingChunks[i] ?? "",
+      culturePlannedChunks[i] ?? "",
+    ]);
+  }
+
+  // 환경구성 (표식 없음)
+  const envOngoing = toLines(data.envSelected);
+  const envPlanned = toLines(data.envPlanned);
+  const envOngoingChunks = chunkLines(envOngoing, maxLinesPerCell);
+  const envPlannedChunks = chunkLines(envPlanned, maxLinesPerCell);
+  const envChunkCount = Math.max(1, envOngoingChunks.length, envPlannedChunks.length);
+  for (let i = 0; i < envChunkCount; i++) {
+    const label = i === 0 ? "환경구성" : "";
+    practiceRows.push([
+      label,
+      envOngoingChunks[i] ?? "",
+      envPlannedChunks[i] ?? "",
+    ]);
+  }
+
+  const tableHead = [["영역", "실천 중인 과제", "실천 예정 과제"]];
+  // 4줄 초과분은 다음 페이지, 5번째 실천과제부터는 새 테이블
+  const tableSegments: [string, string, string][][] = [];
+  let currentSegment: [string, string, string][] = [];
+  for (const row of practiceRows) {
+    if (row[0] === "") {
+      if (currentSegment.length > 0) {
+        tableSegments.push(currentSegment);
+        currentSegment = [];
+      }
+      tableSegments.push([row]);
+    } else {
+      currentSegment.push(row);
+      if (currentSegment.length >= 4) {
+        tableSegments.push(currentSegment);
+        currentSegment = [];
+      }
+    }
+  }
+  if (currentSegment.length > 0) tableSegments.push(currentSegment);
+
+  const drawPracticeTable = (body: [string, string, string][], startY: number) => {
+    autoTable(doc, {
+      startY,
+      head: tableHead,
+      body,
+      theme: "grid",
+      headStyles: {
+        fillColor: [255, 255, 255],
+        textColor: [0, 0, 0],
+        fontStyle: fontBold,
+        fontSize: 9,
+        font: fontFamily,
+      },
+      bodyStyles: {
+        fontSize: 8,
+        font: fontFamily,
+        cellPadding: 3,
+        valign: "top",
+      },
+      columnStyles: {
+        0: { cellWidth: tableWidth * 0.15, fontStyle: fontBold },
+        1: { cellWidth: tableWidth * 0.425 },
+        2: { cellWidth: tableWidth * 0.425 },
+      },
+      styles: {
+        font: fontFamily,
+      },
+      margin: { left: margin, right: margin },
+    });
+  };
+
+  if (tableSegments.length > 0) {
+    drawPracticeTable(tableSegments[0], yPos);
+    for (let i = 1; i < tableSegments.length; i++) {
+      doc.addPage();
+      drawPracticeTable(tableSegments[i], margin + 10);
+    }
+  }
 
   // 파일 저장
   const safeSchoolName = (data.schoolName || "학교").replace(/[<>:"/\\|?*]/g, "_");

@@ -424,6 +424,10 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       tableGroups.push(allTaskItems.slice(i, i + 4));
     }
 
+    // 첫 번째 테이블 끝 위치·페이지 (두 번째 테이블은 "첫 테이블 끝 + 5mm"에 그림)
+    let firstTableEndY: number | null = null;
+    let firstTablePage: number = 1;
+
     // 각 그룹마다 테이블 생성
     tableGroups.forEach((group, groupIndex) => {
       const tableSideMargin = 15; // 테이블 좌우 여백 1.5cm (15mm)
@@ -434,15 +438,15 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       const row1Height = 17; // 첫 번째 row 높이 (실천 과제, 15+2mm)
       const leftPadding = 4; // 왼쪽 여백 4mm (5mm에서 1mm 감소)
       const cellPadding = 5; // 셀 내부 여백 0.5cm (5mm)
-      const cellMargin = 4; // 셀 기본마진/패딩 4mm (세부 실천계획 row: 좌·우·상·하 4mm)
-      const lineHeight = 8; // 줄 간격 8mm (세부 실천계획 줄간격)
+      const cellMargin = 2; // 셀 기본마진/패딩 2mm (세부 실천계획 row: 아래 여백 축소)
+      const lineHeight = 6; // 줄 간격 6mm (세부 실천계획, 약 25% 축소)
+      const maxLinesPerCell = 4; // 세부 실천 계획 셀당 최대 4줄, 초과분은 다음 페이지
       const fontSize = 9; // 세부 실천계획 폰트 크기
-      const detailCellContentWidth = dataColumnWidth - cellMargin * 2; // 텍스트용 너비 (좌우 각 4mm 여백)
+      const detailCellContentWidth = dataColumnWidth - cellMargin * 2; // 텍스트용 너비 (좌우 각 2mm 여백)
 
-      // 세부 실천계획 row 셀 레이아웃:
-      // - 패딩: 좌 4mm, 우 4mm, 상 6mm, 하 4mm
+      // 세부 실천계획 row 셀 레이아웃: 상 6mm, 마지막 줄 아래 4mm
       const detailTopPadding = 6; // 세부 실천계획 셀 위쪽 패딩 6mm
-      // - row 높이 = max(텍스트줄수*lineHeight + 상6 + 하4, minRow2Height 28mm)
+      const detailBottomPadding = 4; // 마지막 줄 끝나고 4mm
 
       // 각 세부 실천계획의 높이를 계산 (가장 긴 것 찾기)
       doc.setFont("NanumMyeongjo", "normal");
@@ -451,15 +455,16 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       let maxDetailHeight = 0;
       const detailHeights: number[] = [];
       
-      // 4개 셀 모두에 대해 높이 계산 (빈 셀 포함)
+      // 4개 셀 모두에 대해 높이 계산 (빈 셀 포함, 셀당 최대 4줄만 반영)
       for (let idx = 0; idx < 4; idx++) {
         if (idx < group.length) {
           const item = group[idx];
           if (item.details.length > 0) {
-            // 리스트 표식(•)을 포함한 텍스트로 높이 계산 (셀 기본마진 4mm 반영)
-            const detailsWithBullets = item.details.map(d => `• ${d}`).join("\n");
-            const lines = doc.splitTextToSize(detailsWithBullets, detailCellContentWidth);
-            const height = lines.length * lineHeight + detailTopPadding + cellMargin; // 상 6mm, 하 4mm
+            // 표식 없음: 세부 실천 계획 텍스트만으로 높이 계산 (셀당 최대 4줄)
+            const detailsText = item.details.join("\n");
+            const lines = doc.splitTextToSize(detailsText, detailCellContentWidth);
+            const lineCount = Math.min(lines.length, maxLinesPerCell);
+            const height = lineCount * lineHeight + detailTopPadding + detailBottomPadding;
             detailHeights.push(height);
             maxDetailHeight = Math.max(maxDetailHeight, height);
           } else {
@@ -474,13 +479,25 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
         }
       }
 
-      // 최소 높이 보장 (세부 실천계획 row)
-      const minRow2Height = 28; // 28mm
+      // 최소 높이 보장 (세부 실천계획 row, 1줄+패딩 기준)
+      const minRow2Height = 18; // 18mm (1줄 6 + 상6 + 하4)
       const row2Height = Math.max(maxDetailHeight, minRow2Height);
       const totalTableHeight = row1Height + row2Height;
 
-      // 새 페이지가 필요한지 확인
-      if (groupIndex > 0 && currentY + totalTableHeight > pageHeight - PDF_CONFIG.margin.bottom) {
+      // 두 번째 테이블(5번째 실천과제): 첫 테이블이 1페이지에만 있으면 2페이지 맨 위, 넘어갔으면 그 끝 + 5mm
+      if (groupIndex >= 1 && firstTableEndY != null) {
+        if (firstTablePage === 1) {
+          doc.addPage(PDF_CONFIG.format, PDF_CONFIG.orientation);
+          currentY = PDF_CONFIG.margin.top;
+        } else {
+          const pageCount = doc.getNumberOfPages();
+          const targetPage = Math.min(firstTablePage, pageCount);
+          doc.setPage(targetPage);
+          currentY = firstTableEndY + 5;
+        }
+      }
+      // 첫 번째 테이블만 공간 부족 시 새 페이지
+      else if (groupIndex === 0 && currentY + totalTableHeight > pageHeight - PDF_CONFIG.margin.bottom) {
         doc.addPage();
         currentY = PDF_CONFIG.margin.top;
       }
@@ -645,31 +662,99 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
           const item = group[idx];
           
           if (item.details.length > 0) {
-            let totalLineCount = 0;
-            const allLines: string[] = [];
-            item.details.forEach((detail) => {
-              const detailLines: string[] = doc.splitTextToSize(detail, detailCellContentWidth) as string[];
-              detailLines.forEach((line: string, lineIdx: number) => {
-                allLines.push(lineIdx === 0 ? `• ${line}` : line);
-                totalLineCount++;
-              });
-            });
-            
-            // 셀 위쪽에서 시작 (위쪽 정렬)
+            // 표식 없음: 세부 실천 계획만 텍스트로 합침
+            const detailsText = item.details.join("\n");
+            const allLines: string[] = doc.splitTextToSize(detailsText, detailCellContentWidth) as string[];
+            const linesToDraw = allLines.slice(0, maxLinesPerCell);
+            const overflowLines = allLines.slice(maxLinesPerCell);
+
+            // 셀 위쪽에서 시작 (위쪽 정렬), 최대 4줄만 그리기
             const startY = row2StartY + detailTopPadding;
-            
-            allLines.forEach((line, lineIdx) => {
+            linesToDraw.forEach((line, lineIdx) => {
               const yPos = startY + lineIdx * lineHeight;
               doc.text(line, cellLeftX, yPos, {
                 align: "left",
                 maxWidth: detailCellContentWidth,
               });
             });
+
+            // 4줄 초과분은 다음 페이지에 그리기 위해 저장 (아래에서 처리)
+            (item as TaskItem & { _overflow?: string[] })._overflow = overflowLines;
           }
         }
       }
 
-      currentY = tableStartY + totalTableHeight + 3; // 테이블 아래 3mm 간격
+      // 첫 테이블 끝 위치·페이지: overflow 없으면 1페이지, overflow 있으면 루프 끝난 뒤 갱신
+      if (groupIndex === 0) {
+        firstTableEndY = tableStartY + totalTableHeight;
+        firstTablePage = doc.getCurrentPageInfo().pageNumber;
+      }
+
+      // 4줄 초과분이 있으면 다음 페이지에 "세부 실천 계획" 한 행 테이블로 계속 그리기
+      while (group.some((item) => (item as TaskItem & { _overflow?: string[] })._overflow?.length)) {
+        doc.addPage(PDF_CONFIG.format, PDF_CONFIG.orientation);
+        currentY = PDF_CONFIG.margin.top;
+
+        const contTableStartY = currentY;
+        let contMaxH = 0;
+        for (let idx = 0; idx < 4; idx++) {
+          const item = idx < group.length ? group[idx] : null;
+          const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
+          const chunk = (overflow || []).slice(0, maxLinesPerCell);
+          const h = chunk.length * lineHeight + detailTopPadding + detailBottomPadding;
+          contMaxH = Math.max(contMaxH, h);
+        }
+        const contRowHeight = Math.max(contMaxH, minRow2Height);
+
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.1);
+        doc.setFillColor(240, 240, 240);
+        doc.rect(tableStartX, contTableStartY, indexColumnWidth, contRowHeight, "FD");
+        doc.setFillColor(255, 255, 255);
+        doc.rect(tableStartX + indexColumnWidth, contTableStartY, dataColumnWidth * 4, contRowHeight, "FD");
+        doc.line(tableStartX + indexColumnWidth, contTableStartY, tableStartX + indexColumnWidth, contTableStartY + contRowHeight);
+        for (let i = 1; i < 4; i++) {
+          const x = tableStartX + indexColumnWidth + dataColumnWidth * i;
+          doc.line(x, contTableStartY, x, contTableStartY + contRowHeight);
+        }
+        doc.line(tableStartX, contTableStartY, tableStartX + indexColumnWidth + dataColumnWidth * 4, contTableStartY);
+        doc.line(tableStartX, contTableStartY + contRowHeight, tableStartX + indexColumnWidth + dataColumnWidth * 4, contTableStartY + contRowHeight);
+
+        const rowCenterY = contTableStartY + contRowHeight / 2 - 3;
+        doc.setFont("NanumMyeongjo", "bold");
+        doc.setFontSize(10);
+        doc.text("세부\n실천 계획", tableStartX + indexColumnWidth / 2, rowCenterY, { align: "center", baseline: "middle" });
+
+        doc.setFont("NanumMyeongjo", "normal");
+        doc.setFontSize(fontSize);
+        for (let idx = 0; idx < 4; idx++) {
+          const cellLeftX = tableStartX + indexColumnWidth + dataColumnWidth * idx + cellMargin;
+          const item = idx < group.length ? group[idx] : null;
+          const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
+          const chunk = (overflow || []).slice(0, maxLinesPerCell);
+          if (item) {
+            (item as TaskItem & { _overflow?: string[] })._overflow = (overflow || []).slice(maxLinesPerCell);
+          }
+
+          const startY = contTableStartY + detailTopPadding;
+          chunk.forEach((line, lineIdx) => {
+            doc.text(line, cellLeftX, startY + lineIdx * lineHeight, {
+              align: "left",
+              maxWidth: detailCellContentWidth,
+            });
+          });
+        }
+
+        currentY = contTableStartY + contRowHeight + 3;
+
+        // 첫 테이블이 2페이지로 넘어간 경우: 두 번째 테이블은 이 overflow 끝 아래에 그리도록 갱신
+        if (groupIndex === 0) {
+          firstTableEndY = currentY;
+          firstTablePage = doc.getCurrentPageInfo().pageNumber;
+        }
+      }
+
+      currentY = tableStartY + totalTableHeight + (groupIndex === 0 ? 3 : 0); // 첫 테이블만 아래 3mm, 둘째는 firstTableEndY+5로 배치됨
     });
 
     // PDF를 Uint8Array로 변환
