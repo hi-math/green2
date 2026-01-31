@@ -160,7 +160,7 @@ export function Step5Summary() {
         </p>
 
         {/* 버튼 영역 */}
-        <div className="mt-5 flex flex-col sm:flex-row items-center gap-4">
+        <div className="mt-5 flex flex-row items-center gap-4">
           <button
             type="button"
             className="inline-flex h-12 min-w-[280px] items-center justify-center rounded-xl bg-[var(--brand-b)] px-6 py-3 text-base font-bold text-white shadow-lg shadow-[var(--brand-b)]/25 hover:brightness-110 hover:shadow-xl hover:shadow-[var(--brand-b)]/30 active:brightness-95 transition-all duration-200 cursor-pointer text-center"

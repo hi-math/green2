@@ -136,9 +136,9 @@ function Step2Section({
   return (
     <div
       className={[
-        "relative min-w-0 px-1 py-2 lg:px-2",
+        "relative min-w-0 px-2 py-2",
         showRightDivider
-          ? "lg:after:absolute lg:after:bottom-3 lg:after:right-[-16px] lg:after:top-3 lg:after:w-px lg:after:bg-slate-200/40 lg:after:content-['']"
+          ? "after:absolute after:bottom-3 after:right-[-16px] after:top-3 after:w-px after:bg-slate-200/40 after:content-['']"
           : "",
       ].join(" ")}
     >
@@ -224,7 +224,7 @@ export function Step2Cards() {
   return (
     <div className="w-full">
       <div className="rounded-2xl border border-slate-200 bg-white/60 p-4 shadow-sm backdrop-blur">
-        <div className="grid grid-cols-1 gap-y-6 lg:grid-cols-[0.96fr_0.96fr_1.08fr] lg:gap-x-10 lg:gap-y-0">
+        <div className="grid grid-cols-[0.96fr_0.96fr_1.08fr] gap-x-10">
           {CARDS.map((card, idx) => (
             <Step2Section
               key={card.title}

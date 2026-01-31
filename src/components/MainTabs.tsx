@@ -103,7 +103,7 @@ export function MainTabs({ showNext = false }: { showNext?: boolean }) {
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-2 gap-6">
         <BasicInfoForm
           form={basic}
           setForm={setBasic}

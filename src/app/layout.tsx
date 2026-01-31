@@ -20,10 +20,10 @@ const notoSansKR = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: "Carbon App",
+  title: "모든 학교에서의 탄소중립 실천 자가진단",
   description: "탄소중립 실천 자가진단",
   icons: {
-    icon: "/favicon.svg",
+    icon: "/images/favi.svg",
   },
 };
 

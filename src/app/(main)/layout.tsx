@@ -79,7 +79,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     <div className="flex h-[calc(100vh/var(--ui-scale))] flex-col overflow-hidden bg-transparent font-sans text-slate-900">
       <header className="w-full shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur relative z-50 opacity-100 visible">
         <div className="h-1 w-full bg-gradient-to-r from-[var(--brand-a)] to-[var(--brand-b)]" />
-        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-[minmax(300px,auto)_1fr] items-center gap-4 px-4 py-2">
+        <div className="mx-auto grid w-full max-w-[1200px] grid-cols-1 items-center gap-4 px-4 py-2 min-[880px]:grid-cols-[minmax(300px,auto)_1fr]">
           <button
             type="button"
             className="flex h-[4.2rem] w-fit min-w-0 items-center cursor-pointer"
@@ -93,7 +93,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               />
           </button>
 
-          <div className="w-full">
+          <div className="hidden w-full min-[880px]:block">
             <div className="mx-auto w-[75%] min-w-0">
               <Stepper
                 steps={[

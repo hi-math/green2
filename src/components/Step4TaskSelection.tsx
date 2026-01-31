@@ -1329,7 +1329,7 @@ export function Step4TaskSelection() {
       </div>
 
       {/* 하단 여백(버튼 아래 답답함 해소) - 다른 레이아웃 건드리지 않음 */}
-      <div className="h-[clamp(14px,3.5vh,48px)] md:h-[clamp(12px,3vh,36px)]" aria-hidden="true" />
+      <div className="h-[clamp(12px,3vh,36px)]" aria-hidden="true" />
 
       {/* 알림 모달 */}
       {alertModal.show && (
