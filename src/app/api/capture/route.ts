@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
       viewportHeight = DEFAULT_VIEWPORT_HEIGHT,
       timeoutMs = READY_SELECTOR_TIMEOUT,
       readyDelayMs = 0, // ready 발견 후 추가 대기(ms). 차트 등 페인트 대기용
+      chartPaintDelayMs = 2500, // ready 없는 페이지용: 요소 찾은 뒤 그래프 완전 렌더 대기(ms)
       quality = JPEG_QUALITY,
       padding = DEFAULT_PADDING, // 좌우 패딩 (px, 0이면 패딩 없음)
       useCssPadding = false, // CSS 주입 방식 사용 여부 (기본: false, sharp 후처리 사용)
@@ -199,9 +200,9 @@ export async function POST(request: NextRequest) {
     // ✅ 2️⃣ puppeteer 설정
     const puppeteerInstance = await getPuppeteer();
     
-    // ✅ 1️⃣ viewport는 1900x1200 고정 (옵션으로 받을 수 있게)
-    const finalViewportWidth = viewportWidth || DEFAULT_VIEWPORT_WIDTH;
-    const finalViewportHeight = viewportHeight || DEFAULT_VIEWPORT_HEIGHT;
+    // ✅ 1️⃣ viewport: viewportWidth/Height 또는 width/height(클라이언트 전달) 사용
+    const finalViewportWidth = viewportWidth || width || DEFAULT_VIEWPORT_WIDTH;
+    const finalViewportHeight = viewportHeight || height || DEFAULT_VIEWPORT_HEIGHT;
     
     const deviceScaleFactor = Math.min(2, Math.max(1, Number(bodyScale) || DEVICE_SCALE_FACTOR));
     let browserConfig: any = {
@@ -773,9 +774,16 @@ export async function POST(request: NextRequest) {
             console.error('[디버깅] Selector 상태:', allSelectors);
             throw new Error(`모든 selector 폴백 실패: ${selectorFallbacks.join(', ')}`);
           }
+
+          // ✅ 그래프 완전 렌더 대기: ApexCharts 등이 다 그려진 뒤 캡처 (그래프 미완성 스크린샷 방지)
+          const paintDelay = Math.min(10000, Math.max(0, Number(chartPaintDelayMs) || 0));
+          if (paintDelay > 0) {
+            console.log(`그래프 페인트 대기: ${paintDelay}ms`);
+            await new Promise((resolve) => setTimeout(resolve, paintDelay));
+          }
           
           // ✅ 요소의 전체 높이(스크롤 포함) 계산 및 스크롤 가능 여부 검증
-          const elementInfo = await page.evaluate((sel: string) => {
+          let elementInfo = await page.evaluate((sel: string) => {
             const el = document.querySelector(sel) as HTMLElement;
             if (!el) return null;
             
@@ -1031,9 +1039,10 @@ export async function POST(request: NextRequest) {
               // ✅ 스크롤 불가능 또는 스티칭 불필요 → 단일 캡처로 폴백
               console.log(`단일 캡처 방식 사용 (스크롤 불가능 또는 스티칭 불필요)`);
               
-              // ✅ 일반 캡처: viewport 조정 후 전체 요소 캡처
+              // ✅ 일반 캡처: viewport 조정 후 전체 요소 캡처 (일부만 찍힘 방지)
               const currentViewport = page.viewport();
-              const requiredHeight = elementInfo.scrollHeight + 200; // 여유 공간
+              const minHeightForFullPage = (usedSelector === 'main' || usedSelector === 'body') ? 2200 : 0;
+              const requiredHeight = Math.max(elementInfo.scrollHeight + 200, minHeightForFullPage);
               const requiredWidth = Math.max(elementInfo.scrollWidth, currentViewport?.width || 1900);
               
               if (currentViewport && (currentViewport.height < requiredHeight || currentViewport.width < requiredWidth)) {

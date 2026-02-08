@@ -137,6 +137,7 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
             deviceScaleFactor: 2,
             timeoutMs: 30000, // ready 셀렉터 대기 시간
             readyDelayMs: 2000, // ready 후 추가 대기 (차트 페인트·수치 반영 확보)
+            chartPaintDelayMs: 0, // PDF 카드 페이지는 data-ready + readyDelayMs로 충분
           }),
         });
 
