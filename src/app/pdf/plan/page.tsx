@@ -34,6 +34,9 @@ function splitTextByMaxLines(params: {
   maxLines: number;
 }): { head: string; tail: string } {
   const { text, sampleEl, maxLines } = params;
+  const rawW = sampleEl.getBoundingClientRect().width;
+  const w = rawW && rawW > 20 ? rawW : 160; // 0폭 방지
+
   const style = window.getComputedStyle(sampleEl);
   const lineHeight = parseFloat(style.lineHeight) || 18;
   const maxHeight = lineHeight * maxLines;
@@ -43,7 +46,7 @@ function splitTextByMaxLines(params: {
   measurer.style.left = "-99999px";
   measurer.style.top = "0";
   measurer.style.visibility = "hidden";
-  measurer.style.width = `${sampleEl.getBoundingClientRect().width}px`;
+  measurer.style.width = `${w}px`;
   measurer.style.font = style.font;
   measurer.style.fontSize = style.fontSize;
   measurer.style.fontFamily = style.fontFamily;
@@ -82,8 +85,12 @@ function splitTextByMaxLines(params: {
   );
   if (backtrack >= 0) cut = backtrack;
 
-  const head = text.slice(0, cut).trimEnd();
-  const tail = text.slice(cut).trimStart();
+  let head = text.slice(0, cut).trimEnd();
+  let tail = text.slice(cut).trimStart();
+  if (head.length === 0 && text.length > 0) {
+    document.body.removeChild(measurer);
+    return { head: text.slice(0, 1), tail: text.slice(1) };
+  }
   document.body.removeChild(measurer);
   return { head, tail };
 }
@@ -132,6 +139,9 @@ async function paginatePlan(params: {
   const tbody = sourceTable.tBodies[0] || sourceTable.querySelector("tbody");
   if (!tbody) return;
 
+  (window as any).__PAGINATION_DONE__ = false;
+  pagesRoot.innerHTML = "";
+
   if (sourceHeader) (sourceHeader as HTMLElement).style.display = "none";
   sourceTable.style.display = "none";
   if (table2) table2.style.display = "none";
@@ -168,26 +178,29 @@ async function paginatePlan(params: {
     return;
   }
 
-  const detailCells = Array.from(detailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+  const originalDetailCells = Array.from(detailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
   const part1DetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
-  const part1DetailCells = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
-
-  const tails: string[] = [];
-  for (let i = 0; i < detailCells.length; i++) {
-    const el = detailCells[i];
-    const fullText = (el.textContent || "").trim().replace(/\r\n/g, "\n");
-    const sampleEl = el;
-    const { head, tail } = splitTextByMaxLines({ text: fullText, sampleEl, maxLines: MAX_LINES_DETAIL });
-    if (part1DetailCells[i]) part1DetailCells[i].textContent = head;
-    tails.push(tail || "");
+  const part1DetailCellsRef = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+  for (let i = 0; i < originalDetailCells.length; i++) {
+    const fullText = (originalDetailCells[i].textContent || "").trim().replace(/\r\n/g, "\n");
+    if (part1DetailCellsRef[i]) part1DetailCellsRef[i].textContent = fullText;
   }
   part1Tbody.appendChild(part1DetailRow);
   page.appendChild(part1);
 
+  const part1DetailCells = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+  const tails: string[] = [];
+  for (let i = 0; i < originalDetailCells.length; i++) {
+    const fullText = (originalDetailCells[i].textContent || "").trim().replace(/\r\n/g, "\n");
+    const sampleEl = part1DetailCells[i];
+    const { head, tail } = splitTextByMaxLines({ text: fullText, sampleEl, maxLines: MAX_LINES_DETAIL });
+    part1DetailCells[i].textContent = head;
+    tails.push(tail || "");
+  }
+
   if (tails.some((t) => t.length > 0)) {
     didSplitTable1ToPage2 = true;
     let restTails = tails.map((t) => t);
-    const originalDetailCells = detailCells;
 
     while (restTails.some((t) => t.length > 0)) {
       page = makePage();
@@ -208,19 +221,19 @@ async function paginatePlan(params: {
       part2.appendChild(part2Tbody);
 
       const contDetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
+      part2Tbody.appendChild(contDetailRow);
+      page.appendChild(part2);
+
       const contDetailCells = Array.from(contDetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
       const nextTails: string[] = [];
-
       for (let i = 0; i < contDetailCells.length; i++) {
         const text = restTails[i] || "";
-        const sampleEl = originalDetailCells[i];
+        const sampleEl = contDetailCells[i];
         const { head, tail } = splitTextByMaxLines({ text, sampleEl, maxLines: MAX_LINES_DETAIL });
         contDetailCells[i].textContent = head;
         nextTails.push(tail || "");
       }
       restTails = nextTails;
-      part2Tbody.appendChild(contDetailRow);
-      page.appendChild(part2);
     }
   }
 
@@ -237,6 +250,7 @@ function PdfPlanPageInner() {
   const sourceHeaderRef = useRef<HTMLDivElement>(null);
   const table1Ref = useRef<HTMLTableElement>(null);
   const table2Ref = useRef<HTMLTableElement>(null);
+  const didPaginateRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -268,7 +282,11 @@ function PdfPlanPageInner() {
 
   useEffect(() => {
     if (!payload || !pagesRootRef.current) return;
-    const run = () => {
+    if (didPaginateRef.current) return;
+    didPaginateRef.current = true;
+
+    const run = async () => {
+      await (document as any).fonts?.ready;
       paginatePlan({
         sourceHeader: sourceHeaderRef.current,
         table1: table1Ref.current,
@@ -276,9 +294,9 @@ function PdfPlanPageInner() {
         pagesRoot: pagesRootRef.current,
       });
     };
-    const id = setTimeout(run, 400);
+    const id = setTimeout(run, 0);
     return () => clearTimeout(id);
-  }, [payload, screenshotDataUrl]);
+  }, [payload]);
 
   if (error) {
     return (
