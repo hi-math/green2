@@ -49,29 +49,31 @@ async function getPuppeteer() {
   return puppeteer;
 }
 
-// ✅ 3️⃣ 보안: 허용된 도메인만 캡처 (SSRF 방지)
+// ✅ 보안 공용: ALLOWED_DOMAINS 파싱 ("," split, trim, lowercase, 빈값 제거)
+function parseAllowedDomains(): string[] {
+  return (process.env.ALLOWED_DOMAINS ?? '')
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// ✅ 보안 공용: 정확 매칭 또는 서브도메인 매칭만 허용 (includes 사용 금지)
+function isHostAllowed(host: string, allowed: string[]): boolean {
+  const normalized = host.toLowerCase().split(':')[0];
+  return allowed.some(
+    (d) => normalized === d || normalized.endsWith('.' + d)
+  );
+}
+
+// ✅ 3️⃣ 보안: 허용된 도메인만 캡처 (SSRF 방지) — ALLOWED_DOMAINS + 개발 전용만
 function isAllowedUrl(url: string): boolean {
   try {
     const targetUrl = new URL(url);
     const hostname = targetUrl.hostname.toLowerCase();
-    
-    // 허용된 호스트 목록
-    const allowedHosts = [
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      // Vercel 환경 변수에서 가져오기
-      process.env.VERCEL_URL?.replace(/^https?:\/\//, '').split(':')[0],
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/^https?:\/\//, '').split(':')[0],
-      // Vercel Preview/Production URL 패턴
-      /^.*\.vercel\.app$/.test(hostname) ? hostname : null,
-    ].filter(Boolean) as string[];
-    
-    // 정확한 매칭 또는 서브도메인 매칭
-    return allowedHosts.some(allowed => {
-      if (!allowed) return false;
-      return hostname === allowed || hostname.endsWith(`.${allowed}`);
-    });
+    const allowedDomains = parseAllowedDomains();
+    const devOnlyAllowed = isDev ? ['localhost', '127.0.0.1', '0.0.0.0'] : [];
+    const allowed = [...allowedDomains, ...devOnlyAllowed];
+    return isHostAllowed(hostname, allowed);
   } catch (error) {
     console.error('URL 검증 실패:', error);
     return false;
@@ -94,7 +96,52 @@ function withScreenshotParam(url: string): string {
 export async function POST(request: NextRequest) {
   let browser: any = null;
   const startTime = Date.now();
-  
+
+  // ✅ 배포 환경 디버깅: 호출자 도메인 확인
+  const origin = request.headers.get('origin');
+  const host = request.headers.get('host');
+  const xForwardedHost = request.headers.get('x-forwarded-host');
+  console.log('origin', origin);
+  console.log('host', host);
+  console.log('x-forwarded-host', xForwardedHost);
+
+  // ✅ 호출자 검증: ALLOWED_DOMAINS 기반 정확/서브도메인 매칭, VERCEL 환경에서만 내부 호출 우회
+  const allowedDomains = parseAllowedDomains();
+  const requestHost = (xForwardedHost ?? host ?? '').toLowerCase().split(':')[0];
+  const vercelEnv = process.env.VERCEL === '1';
+  const internalHeader =
+    !!request.headers.get('x-vercel-id') ||
+    !!request.headers.get('x-vercel-deployment-url');
+  const isInternal = vercelEnv && internalHeader;
+
+  if (allowedDomains.length > 0) {
+    const callerOk = isInternal || isHostAllowed(requestHost, allowedDomains);
+    if (!callerOk) {
+      console.error('Forbidden caller host', {
+        requestHost,
+        origin,
+        host,
+        xForwardedHost,
+        allowedDomains,
+        isInternal,
+      });
+      console.error('[CAPTURE][CALLER_BLOCK]', {
+        requestHost,
+        origin,
+        host,
+        xForwardedHost,
+        allowedDomains,
+        vercelEnv,
+        internalHeader,
+        isInternal,
+      });
+      return NextResponse.json(
+        { error: '허용되지 않은 도메인입니다.' },
+        { status: 403 }
+      );
+    }
+  }
+
   try {
     const body = await request.json();
     const { 
@@ -123,7 +170,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isAllowedUrl(url)) {
-      console.error('허용되지 않은 URL 접근 시도:', url);
+      let hostname = '';
+      try {
+        hostname = new URL(url).hostname.toLowerCase();
+      } catch {
+        hostname = String(url);
+      }
+      console.error('[CAPTURE][TARGET_BLOCK]', {
+        url,
+        hostname,
+        allowedDomains: parseAllowedDomains(),
+        isDev,
+      });
       return NextResponse.json(
         { error: '허용되지 않은 도메인입니다.' },
         { status: 403 }
@@ -357,6 +415,15 @@ export async function POST(request: NextRequest) {
       
       // ✅ 4️⃣ 최종 URL 확인
       const finalUrl = page.url();
+      const requestedHost = new URL(targetUrl).hostname.toLowerCase();
+      console.log('[CAPTURE][NAV_RESULT]', { requestedHost, finalUrl });
+      try {
+        const finalHost = new URL(finalUrl).hostname.toLowerCase();
+        const allowed = parseAllowedDomains();
+        if (allowed.length > 0 && !isHostAllowed(finalHost, allowed)) {
+          console.warn('[CAPTURE][FINAL_HOST_NOT_ALLOWED]', { finalHost, allowed });
+        }
+      } catch {}
       console.log(`[URL 추적] 최종 URL: ${finalUrl}`);
       console.log(`[URL 추적] 네비게이션 이벤트 수: ${navigationEvents.length}`);
       navigationEvents.forEach((event, idx) => {
