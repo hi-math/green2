@@ -82,7 +82,22 @@ const PDF_CONFIG = {
   schoolNameRightMargin: 5, // 학교이름 오른쪽 여백 0.5cm
 } as const;
 
-// puppeteer 직접 사용 제거: /api/capture를 재사용
+/** 템플릿 기반 PDF 생성 시 Puppeteer 브라우저 획득 */
+async function launchBrowserForPdf() {
+  const isDev = process.env.NODE_ENV === "development";
+  if (isDev) {
+    const puppeteer = require("puppeteer");
+    return puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  }
+  const puppeteer = require("puppeteer-core");
+  const chromium = require("@sparticuz/chromium");
+  const executablePath = await chromium.executablePath();
+  return puppeteer.launch({
+    executablePath,
+    headless: true,
+    args: chromium.args || [],
+  });
+}
 
 /**
  * PDF 생성 함수 (스크린샷 기반)
@@ -237,6 +252,41 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
     }
 
     console.log(`스크린샷 캡처 완료: ${screenshotBuffer.length} bytes (${Date.now() - startTime}ms)`);
+
+    // 템플릿 기반 PDF: /pdf/plan 페이지 + Puppeteer page.pdf() (세부 실천과제 4줄 규칙·2번 테이블 배치)
+    if (process.env.USE_PDF_TEMPLATE === "1") {
+      let browser: any = null;
+      try {
+        browser = await launchBrowserForPdf();
+        const page = await browser.newPage();
+        const planUrl = `${base}/pdf/plan`;
+        await page.goto(planUrl, { waitUntil: "networkidle0", timeout: 20000 });
+        const screenshotDataUrl = `data:image/jpeg;base64,${screenshotBuffer.toString("base64")}`;
+        await page.evaluate(
+          (args: { payload: PlanPayload; screenshotDataUrl: string }) => {
+            (window as any).__PLAN_PAYLOAD__ = args.payload;
+            (window as any).__SCREENSHOT_DATA_URL__ = args.screenshotDataUrl;
+          },
+          { payload, screenshotDataUrl }
+        );
+        await page.waitForFunction(
+          () => (window as any).__PAGINATION_DONE__ === true,
+          { timeout: 30000 }
+        );
+        const pdfBuffer = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          preferCSSPageSize: true,
+          margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+        });
+        await browser.close();
+        browser = null;
+        return new Uint8Array(pdfBuffer as ArrayBuffer);
+      } catch (templateErr) {
+        console.warn("템플릿 PDF 실패, jsPDF 폴백:", templateErr);
+        if (browser) await browser.close().catch(() => {});
+      }
+    }
 
     // PDF 생성 (compress: true로 용량 최소화, 목표 1MB 내외)
     const doc = new jsPDF({
@@ -708,13 +758,26 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
 
       // 4줄 초과분이 있으면 다음 페이지에 "세부 실천 계획" 한 행 테이블로 계속 그리기
       // (그릴 내용이 없으면 새 페이지 추가하지 않음 → 반쯤 빈 페이지 방지)
+      const maxContinuationPagesPerGroup = 12; // 그룹당 continuation 상한 (무한 루프·과다 페이지 방지)
+      let continuationPageCount = 0;
+
       while (group.some((item) => filterNonEmptyLines((item as TaskItem & { _overflow?: string[] })._overflow || []).length > 0)) {
+        if (continuationPageCount >= maxContinuationPagesPerGroup) {
+          console.warn(`[PDF] continuation 상한 도달 (그룹 ${groupIndex}), 남은 overflow 무시`);
+          group.forEach((item) => {
+            (item as TaskItem & { _overflow?: string[] })._overflow = [];
+          });
+          break;
+        }
+
         const overflowFilteredPerCell: string[][] = [];
         let totalChunkLines = 0;
+        let totalRemainingBefore = 0;
         for (let idx = 0; idx < 4; idx++) {
           const item = idx < group.length ? group[idx] : null;
           const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
           const filtered = filterNonEmptyLines(overflow || []);
+          totalRemainingBefore += filtered.length;
           const chunk = filtered.slice(0, maxLinesPerCell);
           overflowFilteredPerCell.push(chunk);
           totalChunkLines += chunk.length;
@@ -727,6 +790,7 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
         }
 
         doc.addPage(PDF_CONFIG.format, PDF_CONFIG.orientation);
+        continuationPageCount++;
         currentY = PDF_CONFIG.margin.top;
 
         const contTableStartY = currentY;
@@ -759,15 +823,18 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
 
         doc.setFont("NanumMyeongjo", "normal");
         doc.setFontSize(fontSize);
+        let totalRemainingAfter = 0;
         for (let idx = 0; idx < 4; idx++) {
           const cellLeftX = tableStartX + indexColumnWidth + dataColumnWidth * idx + cellMargin;
           const item = idx < group.length ? group[idx] : null;
           const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
           const filtered = filterNonEmptyLines(overflow || []);
           const chunk = overflowFilteredPerCell[idx];
+          const remainder = filtered.slice(maxLinesPerCell);
           if (item) {
-            (item as TaskItem & { _overflow?: string[] })._overflow = filtered.slice(maxLinesPerCell);
+            (item as TaskItem & { _overflow?: string[] })._overflow = remainder;
           }
+          totalRemainingAfter += remainder.length;
 
           const startY = contTableStartY + detailTopPadding;
           chunk.forEach((line, lineIdx) => {
@@ -776,6 +843,14 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
               maxWidth: detailCellContentWidth,
             });
           });
+        }
+
+        if (totalRemainingAfter >= totalRemainingBefore) {
+          console.warn("[PDF] overflow가 감소하지 않음, continuation 중단");
+          group.forEach((item) => {
+            (item as TaskItem & { _overflow?: string[] })._overflow = [];
+          });
+          break;
         }
 
         currentY = contTableStartY + contRowHeight + 3;

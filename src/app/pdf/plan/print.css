@@ -1,0 +1,41 @@
+/* PDF 실천계획서: 페이지 단위 인쇄 (자동 페이지가 아닌 .page div 기준) */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+.page {
+  width: 210mm;
+  min-height: 297mm;
+  height: 297mm;
+  box-sizing: border-box;
+  padding: 14mm 14mm;
+  overflow: hidden;
+  position: relative;
+  break-after: page;
+  page-break-after: always;
+}
+
+.page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
+.plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 9pt;
+}
+
+.plan-table td,
+.plan-table th {
+  border: 1px solid #d1d5db;
+  vertical-align: top;
+  padding: 4px 5px;
+}
+
+/* 연속 테이블(Part2): 상단 여백 최소화 */
+.table-continuation {
+  margin-top: 6mm;
+}
