@@ -456,6 +456,10 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
       const fontSize = 9; // 세부 실천계획 폰트 크기
       const detailCellContentWidth = dataColumnWidth - cellMargin * 2; // 텍스트용 너비 (좌우 각 2mm 여백)
 
+      // 빈 줄/공백만 있는 줄 제거 (불필요한 overflow·반쯤 빈 페이지 방지)
+      const filterNonEmptyLines = (arr: string[]): string[] =>
+        (arr || []).filter((l) => String(l).trim().length > 0);
+
       // 세부 실천계획 row 셀 레이아웃: 상 6mm, 마지막 줄 아래 4mm
       const detailTopPadding = 6; // 세부 실천계획 셀 위쪽 패딩 6mm
       const detailBottomPadding = 4; // 마지막 줄 끝나고 4mm
@@ -472,9 +476,9 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
         if (idx < group.length) {
           const item = group[idx];
           if (item.details.length > 0) {
-            // 표식 없음: 세부 실천 계획 텍스트만으로 높이 계산 (셀당 최대 4줄)
+            // 표식 없음: 세부 실천 계획 텍스트만으로 높이 계산 (셀당 최대 4줄, 공백 줄 제외)
             const detailsText = item.details.join("\n");
-            const lines = doc.splitTextToSize(detailsText, detailCellContentWidth);
+            const lines = filterNonEmptyLines(doc.splitTextToSize(detailsText, detailCellContentWidth) as string[]);
             const lineCount = Math.min(lines.length, maxLinesPerCell);
             const height = lineCount * lineHeight + detailTopPadding + detailBottomPadding;
             detailHeights.push(height);
@@ -674,9 +678,9 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
           const item = group[idx];
           
           if (item.details.length > 0) {
-            // 표식 없음: 세부 실천 계획만 텍스트로 합침
+            // 표식 없음: 세부 실천 계획만 텍스트로 합침, 공백 줄 제외해 overflow 폭증 방지
             const detailsText = item.details.join("\n");
-            const allLines: string[] = doc.splitTextToSize(detailsText, detailCellContentWidth) as string[];
+            const allLines: string[] = filterNonEmptyLines(doc.splitTextToSize(detailsText, detailCellContentWidth) as string[]);
             const linesToDraw = allLines.slice(0, maxLinesPerCell);
             const overflowLines = allLines.slice(maxLinesPerCell);
 
@@ -690,7 +694,7 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
               });
             });
 
-            // 4줄 초과분은 다음 페이지에 그리기 위해 저장 (아래에서 처리)
+            // 4줄 초과분만 저장 (공백 줄은 이미 제거됨)
             (item as TaskItem & { _overflow?: string[] })._overflow = overflowLines;
           }
         }
@@ -703,16 +707,32 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
       }
 
       // 4줄 초과분이 있으면 다음 페이지에 "세부 실천 계획" 한 행 테이블로 계속 그리기
-      while (group.some((item) => (item as TaskItem & { _overflow?: string[] })._overflow?.length)) {
+      // (그릴 내용이 없으면 새 페이지 추가하지 않음 → 반쯤 빈 페이지 방지)
+      while (group.some((item) => filterNonEmptyLines((item as TaskItem & { _overflow?: string[] })._overflow || []).length > 0)) {
+        const overflowFilteredPerCell: string[][] = [];
+        let totalChunkLines = 0;
+        for (let idx = 0; idx < 4; idx++) {
+          const item = idx < group.length ? group[idx] : null;
+          const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
+          const filtered = filterNonEmptyLines(overflow || []);
+          const chunk = filtered.slice(0, maxLinesPerCell);
+          overflowFilteredPerCell.push(chunk);
+          totalChunkLines += chunk.length;
+        }
+        if (totalChunkLines === 0) {
+          group.forEach((item) => {
+            (item as TaskItem & { _overflow?: string[] })._overflow = [];
+          });
+          break;
+        }
+
         doc.addPage(PDF_CONFIG.format, PDF_CONFIG.orientation);
         currentY = PDF_CONFIG.margin.top;
 
         const contTableStartY = currentY;
         let contMaxH = 0;
         for (let idx = 0; idx < 4; idx++) {
-          const item = idx < group.length ? group[idx] : null;
-          const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
-          const chunk = (overflow || []).slice(0, maxLinesPerCell);
+          const chunk = overflowFilteredPerCell[idx];
           const h = chunk.length * lineHeight + detailTopPadding + detailBottomPadding;
           contMaxH = Math.max(contMaxH, h);
         }
@@ -743,9 +763,10 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
           const cellLeftX = tableStartX + indexColumnWidth + dataColumnWidth * idx + cellMargin;
           const item = idx < group.length ? group[idx] : null;
           const overflow = item ? (item as TaskItem & { _overflow?: string[] })._overflow : [];
-          const chunk = (overflow || []).slice(0, maxLinesPerCell);
+          const filtered = filterNonEmptyLines(overflow || []);
+          const chunk = overflowFilteredPerCell[idx];
           if (item) {
-            (item as TaskItem & { _overflow?: string[] })._overflow = (overflow || []).slice(maxLinesPerCell);
+            (item as TaskItem & { _overflow?: string[] })._overflow = filtered.slice(maxLinesPerCell);
           }
 
           const startY = contTableStartY + detailTopPadding;
