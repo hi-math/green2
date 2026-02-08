@@ -348,18 +348,18 @@ function CardsContent() {
       } catch (error) {
         // 폰트 로딩 실패해도 계속 진행
         console.warn("[PDF/CARDS] Font loading check failed:", error);
-      } finally {
-        // 약간의 지연 후 ready 설정 (컴포넌트 렌더링 완료 대기)
-        setTimeout(setReady, 300);
       }
+      // 차트(ReactApexChart)가 마운트·페인트될 시간 확보 후 ready 설정
+      // 300ms → 1500ms: 스크린샷이 완성되지 않은 페이지/잘못된 수치 방지
+      setTimeout(setReady, 1500);
     };
-    
+
     done();
   }, []);
 
   return (
     <>
-      {/* 스크린샷용: 모든 애니메이션 비활성화 */}
+      {/* 캡처 전용 페이지: 애니메이션 불필요 → 전역 비활성화 */}
       <style dangerouslySetInnerHTML={{
         __html: `
           * {

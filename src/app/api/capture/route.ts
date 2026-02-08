@@ -162,6 +162,7 @@ export async function POST(request: NextRequest) {
       viewportWidth = DEFAULT_VIEWPORT_WIDTH,
       viewportHeight = DEFAULT_VIEWPORT_HEIGHT,
       timeoutMs = READY_SELECTOR_TIMEOUT,
+      readyDelayMs = 0, // ready 발견 후 추가 대기(ms). 차트 등 페인트 대기용
       quality = JPEG_QUALITY,
       padding = DEFAULT_PADDING, // 좌우 패딩 (px, 0이면 패딩 없음)
       useCssPadding = false, // CSS 주입 방식 사용 여부 (기본: false, sharp 후처리 사용)
@@ -478,6 +479,13 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.warn(`Ready selector [${readySelector}]를 찾을 수 없습니다. 계속 진행합니다.`);
         // selector가 없어도 계속 진행 (하위 호환성)
+      }
+
+      // ✅ ready 후 추가 대기 (차트/레이아웃 페인트 확보)
+      const delayMs = Math.min(10000, Math.max(0, Number(readyDelayMs) || 0));
+      if (delayMs > 0) {
+        console.log(`Ready 후 추가 대기: ${delayMs}ms`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
 
       // ✅ 폰트 로딩 대기 (간소화: 최대 2초)

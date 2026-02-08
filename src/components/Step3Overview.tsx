@@ -296,7 +296,7 @@ export function SemiShareGauge({
                 fontFamily: 'var(--font-brand), "Jalnan", sans-serif'
               }}
             >
-              <CountUpNumber value={totalValue} duration={1500} />
+              {disableAnimation ? totalText : <CountUpNumber value={totalValue} duration={1500} />}
             </div>
             <div className="text-[9px] font-semibold text-[color:rgba(75,70,41,0.6)] text-center">
               kgCO<sub>2</sub>eq

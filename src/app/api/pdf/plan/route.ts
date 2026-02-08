@@ -135,7 +135,8 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
             quality: 70,
             outputWidth: 1920, // 캡처 선명도 우선 (최종 1920px)
             deviceScaleFactor: 2,
-            timeout: 30000,
+            timeoutMs: 30000, // ready 셀렉터 대기 시간
+            readyDelayMs: 2000, // ready 후 추가 대기 (차트 페인트·수치 반영 확보)
           }),
         });
 
