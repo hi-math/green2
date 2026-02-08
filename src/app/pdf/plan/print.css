@@ -10,7 +10,7 @@
   height: 297mm;
   box-sizing: border-box;
   padding: 14mm 14mm;
-  overflow: hidden;
+  overflow: visible; /* 2페이지(연속) tail 전체가 잘리지 않도록. 1페이지는 4줄로 제한되어 있음 */
   position: relative;
   break-after: page;
   page-break-after: always;
@@ -19,6 +19,12 @@
 .page:last-child {
   break-after: auto;
   page-break-after: auto;
+}
+
+/* 연속 페이지만 높이 확장: 4줄 규칙 없이 tail 전체 표시 */
+.page--continuation {
+  height: auto;
+  min-height: 297mm;
 }
 
 .plan-table {

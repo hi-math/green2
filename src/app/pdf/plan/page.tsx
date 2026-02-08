@@ -201,6 +201,7 @@ async function paginatePlan(params: {
   if (tails.some((t) => t.length > 0)) {
     didSplitTable1ToPage2 = true;
     page = makePage();
+    page.classList.add("page--continuation"); // 높이 확장으로 tail 전체 표시
     const part2 = sourceTable.cloneNode(false) as HTMLTableElement;
     part2.id = "";
     part2.classList.add("plan-table", "table-continuation");
