@@ -1,17 +1,15 @@
 "use client";
 
 /**
- * PDF 실천계획서 템플릿: .page 단위 페이지네이션
- * - 세부 실천과제 4줄 규칙: 초과분은 다음 페이지 연속 테이블로
- * - 1번 테이블이 2페이지로 넘어가면 2번 테이블은 마지막 페이지 바로 아래
- * - 1번 테이블이 1페이지에서 끝나면 2번 테이블은 2페이지 맨 위
+ * PDF 실천계획서 템플릿: .page 단위 페이지네이션 (단순 규칙)
+ * - 테이블 내용이 다음 페이지로 넘어가면 다음 페이지에 생성
+ * - 한 테이블 = 4개 컬럼, 두 번째 테이블은 첫 번째 테이블 다음에 이어서
+ * - 이전 테이블 뒤 여백 부족 시 두 번째 테이블은 다음 페이지로
  */
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useRef } from "react";
 import "./print.css";
 import "../../globals.css";
-
-const MAX_LINES_DETAIL = 4;
 
 interface PlanPayload {
   schoolName: string;
@@ -28,103 +26,6 @@ function flattenItems(payload: PlanPayload): Array<{ label: string; details: str
   return out;
 }
 
-function splitTextByMaxLines(params: {
-  text: string;
-  sampleEl: HTMLElement;
-  maxLines: number;
-}): { head: string; tail: string } {
-  const { text, sampleEl, maxLines } = params;
-  const rawW = sampleEl.getBoundingClientRect().width;
-  const w = rawW && rawW > 20 ? rawW : 160; // 0폭 방지
-
-  const style = window.getComputedStyle(sampleEl);
-  const lineHeight = parseFloat(style.lineHeight) || 18;
-  const maxHeight = lineHeight * maxLines;
-
-  const measurer = document.createElement("div");
-  measurer.style.position = "fixed";
-  measurer.style.left = "-99999px";
-  measurer.style.top = "0";
-  measurer.style.visibility = "hidden";
-  measurer.style.width = `${w}px`;
-  measurer.style.font = style.font;
-  measurer.style.fontSize = style.fontSize;
-  measurer.style.fontFamily = style.fontFamily;
-  measurer.style.fontWeight = style.fontWeight;
-  measurer.style.lineHeight = style.lineHeight;
-  measurer.style.whiteSpace = "pre-wrap";
-  measurer.style.wordBreak = style.wordBreak || "break-word";
-  measurer.style.letterSpacing = style.letterSpacing;
-  measurer.style.padding = style.padding;
-  measurer.style.boxSizing = "border-box";
-  document.body.appendChild(measurer);
-
-  const fits = (s: string) => {
-    measurer.textContent = s;
-    return measurer.scrollHeight <= maxHeight + 0.5;
-  };
-
-  if (fits(text)) {
-    document.body.removeChild(measurer);
-    return { head: text, tail: "" };
-  }
-
-  let lo = 0;
-  let hi = text.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    const candidate = text.slice(0, mid);
-    if (fits(candidate)) lo = mid;
-    else hi = mid - 1;
-  }
-  let cut = lo;
-  const backtrack = Math.max(
-    text.lastIndexOf(" ", lo),
-    text.lastIndexOf("\n", lo),
-    lo - 1
-  );
-  if (backtrack >= 0) cut = backtrack;
-
-  let head = text.slice(0, cut).trimEnd();
-  let tail = text.slice(cut).trimStart();
-  if (head.length === 0 && text.length > 0) {
-    document.body.removeChild(measurer);
-    return { head: text.slice(0, 1), tail: text.slice(1) };
-  }
-  document.body.removeChild(measurer);
-  return { head, tail };
-}
-
-function placeTable2(params: {
-  table2: HTMLTableElement | null;
-  pagesRoot: HTMLElement | null;
-  didSplitTable1ToPage2: boolean;
-  makePage: () => HTMLDivElement;
-}) {
-  const { table2, pagesRoot, didSplitTable1ToPage2, makePage } = params;
-  if (!table2 || !pagesRoot) return;
-
-  const t2 = table2.cloneNode(true) as HTMLTableElement;
-  t2.id = "";
-  t2.classList.add("plan-table");
-
-  if (didSplitTable1ToPage2) {
-    const lastPage = pagesRoot.querySelector(".page:last-child") as HTMLElement;
-    if (lastPage) {
-      const wrap = document.createElement("div");
-      wrap.className = "table-continuation";
-      wrap.appendChild(t2);
-      lastPage.appendChild(wrap);
-    } else {
-      const page2 = makePage();
-      page2.appendChild(t2);
-    }
-  } else {
-    const page2 = makePage();
-    page2.appendChild(t2);
-  }
-}
-
 async function paginatePlan(params: {
   sourceHeader: HTMLElement | null;
   table1: HTMLTableElement | null;
@@ -134,16 +35,11 @@ async function paginatePlan(params: {
   const { sourceHeader, table1, table2, pagesRoot } = params;
   if (!table1 || !pagesRoot) return;
 
-  const sourceTable = table1;
-  const thead = sourceTable.tHead;
-  const tbody = sourceTable.tBodies[0] || sourceTable.querySelector("tbody");
-  if (!tbody) return;
-
   (window as any).__PAGINATION_DONE__ = false;
   pagesRoot.innerHTML = "";
 
   if (sourceHeader) (sourceHeader as HTMLElement).style.display = "none";
-  sourceTable.style.display = "none";
+  table1.style.display = "none";
   if (table2) table2.style.display = "none";
 
   const makePage = () => {
@@ -153,80 +49,29 @@ async function paginatePlan(params: {
     return page;
   };
 
-  let didSplitTable1ToPage2 = false;
-  let page = makePage();
-
+  // 1페이지: 헤더 + 테이블1 전체 (4컬럼). 내용이 길면 다음 페이지로 넘어가도록 확장 허용
+  const page1 = makePage();
+  page1.classList.add("page--continuation");
   if (sourceHeader) {
     const headerClone = sourceHeader.cloneNode(true) as HTMLElement;
     headerClone.removeAttribute("id");
-    page.appendChild(headerClone);
+    page1.appendChild(headerClone);
+  }
+  const t1 = table1.cloneNode(true) as HTMLTableElement;
+  t1.id = "";
+  t1.classList.add("plan-table");
+  page1.appendChild(t1);
+
+  // 2페이지: 테이블2 (첫 테이블 다음에 이어서, 여백 부족하면 다음 페이지)
+  if (table2) {
+    const page2 = makePage();
+    page2.classList.add("page--continuation");
+    const t2 = table2.cloneNode(true) as HTMLTableElement;
+    t2.id = "";
+    t2.classList.add("plan-table", "table-continuation");
+    page2.appendChild(t2);
   }
 
-  const part1 = sourceTable.cloneNode(false) as HTMLTableElement;
-  part1.id = "";
-  part1.classList.add("plan-table");
-  if (thead) part1.appendChild(thead.cloneNode(true));
-  const part1Tbody = document.createElement("tbody");
-  part1.appendChild(part1Tbody);
-
-  const detailRow = tbody.rows[0] || null;
-  if (!detailRow) {
-    page.appendChild(part1);
-    placeTable2({ table2, pagesRoot, didSplitTable1ToPage2: false, makePage });
-    (window as any).__PAGINATION_DONE__ = true;
-    return;
-  }
-
-  const originalDetailCells = Array.from(detailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
-  const part1DetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
-  const part1DetailCellsRef = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
-  for (let i = 0; i < originalDetailCells.length; i++) {
-    const fullText = (originalDetailCells[i].textContent || "").trim().replace(/\r\n/g, "\n");
-    if (part1DetailCellsRef[i]) part1DetailCellsRef[i].textContent = fullText;
-  }
-  part1Tbody.appendChild(part1DetailRow);
-  page.appendChild(part1);
-
-  const part1DetailCells = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
-  const tails: string[] = [];
-  for (let i = 0; i < originalDetailCells.length; i++) {
-    const fullText = (originalDetailCells[i].textContent || "").trim().replace(/\r\n/g, "\n");
-    const sampleEl = part1DetailCells[i];
-    const { head, tail } = splitTextByMaxLines({ text: fullText, sampleEl, maxLines: MAX_LINES_DETAIL });
-    part1DetailCells[i].textContent = head;
-    tails.push(tail || "");
-  }
-
-  // 2페이지(연속)부터는 4줄 규칙 미적용: tail 전체를 한 번에 넣음
-  if (tails.some((t) => t.length > 0)) {
-    didSplitTable1ToPage2 = true;
-    page = makePage();
-    page.classList.add("page--continuation"); // 높이 확장으로 tail 전체 표시
-    const part2 = sourceTable.cloneNode(false) as HTMLTableElement;
-    part2.id = "";
-    part2.classList.add("plan-table", "table-continuation");
-    if (thead) {
-      const contThead = thead.cloneNode(true) as HTMLTableSectionElement;
-      contThead.querySelectorAll('[data-col="label"]').forEach((el) => {
-        (el as HTMLElement).textContent = "";
-      });
-      const idxCell = contThead.querySelector('[data-col="index"]') as HTMLElement;
-      if (idxCell) idxCell.textContent = "(계속)";
-      part2.appendChild(contThead);
-    }
-    const part2Tbody = document.createElement("tbody");
-    part2.appendChild(part2Tbody);
-
-    const contDetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
-    const contDetailCells = Array.from(contDetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
-    for (let i = 0; i < contDetailCells.length; i++) {
-      contDetailCells[i].textContent = tails[i] || "";
-    }
-    part2Tbody.appendChild(contDetailRow);
-    page.appendChild(part2);
-  }
-
-  placeTable2({ table2, pagesRoot, didSplitTable1ToPage2, makePage });
   (window as any).__PAGINATION_DONE__ = true;
 }
 
