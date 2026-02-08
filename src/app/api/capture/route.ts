@@ -20,8 +20,8 @@ const DEFAULT_PADDING = 24; // 좌우 패딩 기본값 (px)
 let puppeteer: any;
 let chromium: any;
 
-// 로컬 개발 환경인지 확인 (더 안전한 방법)
-const isDev = process.env.NODE_ENV === 'development' || !process.env.VERCEL;
+// 로컬 개발 환경인지 확인 (우분투 서버 등 NODE_ENV 기준)
+const isDev = process.env.NODE_ENV === 'development';
 
 // 동적 import로 메모리 최적화
 async function getPuppeteer() {
@@ -107,6 +107,13 @@ export async function POST(request: NextRequest) {
 
   // ✅ 호출자 검증: ALLOWED_DOMAINS 기반 정확/서브도메인 매칭, VERCEL 환경에서만 내부 호출 우회
   const allowedDomains = parseAllowedDomains();
+  if (!isDev && allowedDomains.length === 0) {
+    console.error('[CAPTURE][MISCONFIG] ALLOWED_DOMAINS is empty in production');
+    return NextResponse.json(
+      { error: '서버 설정 오류: ALLOWED_DOMAINS 미설정' },
+      { status: 403 }
+    );
+  }
   const requestHost = (xForwardedHost ?? host ?? '').toLowerCase().split(':')[0];
   const vercelEnv = process.env.VERCEL === '1';
   const internalHeader =
