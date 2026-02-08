@@ -22,10 +22,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Vercel Pro 플랜 기준
 
+import { NextRequest } from "next/server";
 import jsPDF from "jspdf";
 import { readFileSync } from "fs";
 import { join } from "path";
 import sharp from "sharp";
+
+/** 요청 헤더 기반 origin 계산 (HTTP/HTTPS 모두 대응) */
+function getRequestOrigin(req: NextRequest): string {
+  const xfProto = req.headers.get("x-forwarded-proto");
+  const xfHost = req.headers.get("x-forwarded-host");
+  const host = req.headers.get("host");
+  const proto = (xfProto ?? new URL(req.url).protocol.replace(":", "")).toLowerCase();
+  const finalHost = (xfHost ?? host ?? "").split(",")[0].trim();
+  if (!finalHost) throw new Error("Host is missing");
+  return `${proto}://${finalHost}`;
+}
 
 interface TaskItem {
   label: string;
@@ -80,13 +92,12 @@ const PDF_CONFIG = {
  * @param payload - PDF 생성에 필요한 데이터
  * @returns PDF Blob (Uint8Array)
  */
-async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Array> {
+async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequest): Promise<Uint8Array> {
   const startTime = Date.now();
 
   try {
-    // /api/capture를 APP_ORIGIN 기반 절대 URL로 호출 (caller host 검증 통과)
-    const base = (process.env.APP_ORIGIN || "").replace(/\/$/, "");
-    if (!base) throw new Error("APP_ORIGIN is not set");
+    // capture API base: (1) APP_ORIGIN override (2) 요청 헤더 기반 동적 origin
+    const base = (process.env.APP_ORIGIN || "").replace(/\/$/, "") || getRequestOrigin(request);
     const captureApi = `${base}/api/capture`;
 
     const dataParam = encodeURIComponent(JSON.stringify({
@@ -827,8 +838,20 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
  *    - Content-Disposition: inline → 브라우저에서 PDF 열기
  *    - 사용 예: /plan/preview 페이지에서 호출
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // 디버그: origin 계산에 사용되는 헤더와 base
+    const xfProto = request.headers.get("x-forwarded-proto");
+    const xfHost = request.headers.get("x-forwarded-host");
+    const host = request.headers.get("host");
+    let base: string;
+    try {
+      base = (process.env.APP_ORIGIN || "").replace(/\/$/, "") || getRequestOrigin(request);
+    } catch {
+      base = "(getRequestOrigin failed)";
+    }
+    console.log("pdf origin", { xfProto, xfHost, host, reqUrl: request.url, base });
+
     // 요청 본문에서 데이터 추출
     const payload = (await request.json()) as PlanPayload;
 
@@ -837,7 +860,7 @@ export async function POST(request: Request) {
     const isPreview = url.searchParams.get("preview") === "true";
 
     // PDF 생성 (스크린샷 기반)
-    const pdfBuffer = await generatePDFFromScreenshot(payload);
+    const pdfBuffer = await generatePDFFromScreenshot(payload, request);
 
     // 파일명 생성
     const schoolName = payload.schoolName || "학교";
