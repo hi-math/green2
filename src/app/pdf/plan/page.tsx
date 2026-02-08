@@ -197,42 +197,32 @@ async function paginatePlan(params: {
     tails.push(tail || "");
   }
 
+  // 2페이지(연속)부터는 4줄 규칙 미적용: tail 전체를 한 번에 넣음
   if (tails.some((t) => t.length > 0)) {
     didSplitTable1ToPage2 = true;
-    let restTails = tails.map((t) => t);
-
-    while (restTails.some((t) => t.length > 0)) {
-      page = makePage();
-      const part2 = sourceTable.cloneNode(false) as HTMLTableElement;
-      part2.id = "";
-      part2.classList.add("plan-table", "table-continuation");
-      if (thead) {
-        const contThead = thead.cloneNode(true) as HTMLTableSectionElement;
-        contThead.querySelectorAll('[data-col="label"]').forEach((el) => {
-          (el as HTMLElement).textContent = "";
-        });
-        const idxCell = contThead.querySelector('[data-col="index"]') as HTMLElement;
-        if (idxCell) idxCell.textContent = "(계속)";
-        part2.appendChild(contThead);
-      }
-      const part2Tbody = document.createElement("tbody");
-      part2.appendChild(part2Tbody);
-
-      const contDetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
-      part2Tbody.appendChild(contDetailRow);
-      page.appendChild(part2);
-
-      const contDetailCells = Array.from(contDetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
-      const nextTails: string[] = [];
-      for (let i = 0; i < contDetailCells.length; i++) {
-        const text = restTails[i] || "";
-        const sampleEl = contDetailCells[i];
-        const { head, tail } = splitTextByMaxLines({ text, sampleEl, maxLines: MAX_LINES_DETAIL });
-        contDetailCells[i].textContent = head;
-        nextTails.push(tail || "");
-      }
-      restTails = nextTails;
+    page = makePage();
+    const part2 = sourceTable.cloneNode(false) as HTMLTableElement;
+    part2.id = "";
+    part2.classList.add("plan-table", "table-continuation");
+    if (thead) {
+      const contThead = thead.cloneNode(true) as HTMLTableSectionElement;
+      contThead.querySelectorAll('[data-col="label"]').forEach((el) => {
+        (el as HTMLElement).textContent = "";
+      });
+      const idxCell = contThead.querySelector('[data-col="index"]') as HTMLElement;
+      if (idxCell) idxCell.textContent = "(계속)";
+      part2.appendChild(contThead);
     }
+    const part2Tbody = document.createElement("tbody");
+    part2.appendChild(part2Tbody);
+
+    const contDetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
+    const contDetailCells = Array.from(contDetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+    for (let i = 0; i < contDetailCells.length; i++) {
+      contDetailCells[i].textContent = tails[i] || "";
+    }
+    part2Tbody.appendChild(contDetailRow);
+    page.appendChild(part2);
   }
 
   placeTable2({ table2, pagesRoot, didSplitTable1ToPage2, makePage });
