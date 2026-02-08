@@ -62,14 +62,15 @@ async function paginatePlan(params: {
   t1.classList.add("plan-table");
   page1.appendChild(t1);
 
-  // 2페이지: 테이블2 (첫 테이블 다음에 이어서, 여백 부족하면 다음 페이지)
+  // 연속 블록: .page가 아닌 continuation-root, 페이지 분할은 브라우저에 맡김
   if (table2) {
-    const page2 = makePage();
-    page2.classList.add("page--continuation");
+    const continuationRoot = document.createElement("div");
+    continuationRoot.className = "continuation-root";
+    pagesRoot.appendChild(continuationRoot);
     const t2 = table2.cloneNode(true) as HTMLTableElement;
     t2.id = "";
     t2.classList.add("plan-table", "table-continuation");
-    page2.appendChild(t2);
+    continuationRoot.appendChild(t2);
   }
 
   (window as any).__PAGINATION_DONE__ = true;

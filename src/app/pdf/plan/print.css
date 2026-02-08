@@ -21,10 +21,19 @@
   page-break-after: auto;
 }
 
-/* 연속 페이지만 높이 확장: 4줄 규칙 없이 tail 전체 표시 */
+/* 연속 페이지만 높이 확장: 내용이 길어도 잘리지 않도록 */
 .page--continuation {
   height: auto;
   min-height: 297mm;
+}
+
+/* 연속 블록: .page가 아님. 페이지 분할은 브라우저에 맡김 */
+.continuation-root {
+  width: 210mm;
+  box-sizing: border-box;
+  padding: 14mm 14mm;
+  break-after: auto;
+  page-break-after: auto;
 }
 
 .plan-table {
