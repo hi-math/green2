@@ -84,15 +84,11 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
   const startTime = Date.now();
 
   try {
-    // /api/capture를 사용하여 스크린샷 이미지 획득
-    // 렌더링할 URL 생성
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL
-        ? process.env.NEXT_PUBLIC_APP_URL
-        : process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : "http://localhost:3000";
-    
+    // /api/capture를 APP_ORIGIN 기반 절대 URL로 호출 (caller host 검증 통과)
+    const base = (process.env.APP_ORIGIN || "").replace(/\/$/, "");
+    if (!base) throw new Error("APP_ORIGIN is not set");
+    const captureApi = `${base}/api/capture`;
+
     const dataParam = encodeURIComponent(JSON.stringify({
       schoolName: payload.schoolName,
       targetPct: payload.targetPct,
@@ -101,18 +97,20 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
       usageValues: payload.usageValues,
     }));
 
-    const renderUrl = `${baseUrl}/pdf/cards?data=${dataParam}&screenshot=1`;
+    const renderUrl = `${base}/pdf/cards?data=${dataParam}&screenshot=1`;
     console.log("렌더링 URL:", renderUrl);
 
     // /api/capture 호출 (재시도 로직 포함)
     let screenshotBuffer: Buffer | undefined;
-    
+    const requestHost = base ? new URL(captureApi).host : "(unknown)";
+    const origin = base;
+
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`=== /api/capture 호출 시도 ${attempt}/3 ===`);
         
-        // /api/capture 호출
-        const captureResponse = await fetch(`${baseUrl}/api/capture`, {
+        // /api/capture 호출 (절대 URL)
+        const captureResponse = await fetch(captureApi, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -143,7 +141,7 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
           
           // 에러 응답에 네비게이션 정보가 있는지 확인
           const errorMessage = errorJson.error || responseText;
-          console.error(`/api/capture 에러 응답 (${captureResponse.status}):`, errorMessage);
+          console.error(`/api/capture 에러 응답 (${captureResponse.status}) [requestHost=${requestHost} origin=${origin} captureApi=${captureApi}]:`, errorMessage);
           
           if (errorMessage && (
             errorMessage.includes("vercel.com/login") ||
@@ -174,7 +172,7 @@ async function generatePDFFromScreenshot(payload: PlanPayload): Promise<Uint8Arr
         const contentType = captureResponse.headers.get("content-type");
         if (!contentType || (!contentType.startsWith("image/") && !contentType.includes("png") && !contentType.includes("jpeg") && !contentType.includes("jpg"))) {
           const responseText = await captureResponse.text();
-          console.error("예상치 못한 Content-Type:", contentType);
+          console.error("예상치 못한 Content-Type:", contentType, "[requestHost=" + requestHost + " origin=" + origin + " captureApi=" + captureApi + "]");
           console.error("응답 본문:", responseText.substring(0, 500));
           throw new Error(`/api/capture가 이미지가 아닌 응답을 반환했습니다. Content-Type: ${contentType}`);
         }
