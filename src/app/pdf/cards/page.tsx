@@ -32,6 +32,7 @@ interface CardsData {
     electric: number;
     gas: number;
     water: number;
+    solar?: number; // 신재생에너지(kWh). 전기에서 차감 후 탄소배출량 산출 (3페이지와 동일)
   };
 }
 
@@ -187,13 +188,13 @@ function CardsContent() {
   const targetPct = data?.targetPct || 10;
   const baselineYear = data?.baselineYear || 2025;
   const nextYear = data?.nextYear || 2026;
-  const usageValues = data?.usageValues || { electric: 0, gas: 0, water: 0 };
+  const usageValues = data?.usageValues || { electric: 0, gas: 0, water: 0, solar: 0 };
 
-  // 총 탄소배출량 계산 (4페이지와 동일한 로직)
+  // 총 탄소배출량 계산: 신재생에너지 사용량을 전기에서 빼고 산출 (3페이지와 동일)
   const electric = usageValues.electric;
   const gas = usageValues.gas;
   const water = usageValues.water;
-  const solar = 0; // PDF용으로는 solar 없음
+  const solar = usageValues.solar ?? 0;
 
   const netElectric = Math.max(0, electric - solar);
   const totalCarbonKg = netElectric * 0.4781 + gas * 2.176 + water * 0.237;

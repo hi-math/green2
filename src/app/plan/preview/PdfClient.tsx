@@ -18,6 +18,7 @@ type Step1Snapshot = {
     electricWon?: string;
     gasWon?: string;
     waterWon?: string;
+    solarAnnualKwh?: string;
   };
   yearUsed?: number | null;
 };
@@ -76,6 +77,7 @@ export default function PdfClient() {
     electric?: string;
     gas?: string;
     water?: string;
+    solar?: string;
   } | null>(null);
   const [energyYearUsed, setEnergyYearUsed] = useState<number | null>(null);
 
@@ -111,6 +113,7 @@ export default function PdfClient() {
         electric: e.electricWon ?? "",
         gas: e.gasWon ?? "",
         water: e.waterWon ?? "",
+        solar: e.solarAnnualKwh ?? "",
       });
       setEnergyYearUsed(typeof snap?.yearUsed === "number" ? snap.yearUsed : null);
       setSchoolName(String(snap?.basic?.schoolName ?? "").trim());
@@ -156,6 +159,7 @@ export default function PdfClient() {
           electric: toNumLoose(emissions?.electric ?? "") ?? 0,
           gas: toNumLoose(emissions?.gas ?? "") ?? 0,
           water: toNumLoose(emissions?.water ?? "") ?? 0,
+          solar: toNumLoose(emissions?.solar ?? "") ?? 0,
         };
 
         const baselineYear = typeof energyYearUsed === "number" ? energyYearUsed : new Date().getFullYear() - 1;
@@ -245,6 +249,7 @@ export default function PdfClient() {
       electric: toNumLoose(emissions?.electric ?? "") ?? 0,
       gas: toNumLoose(emissions?.gas ?? "") ?? 0,
       water: toNumLoose(emissions?.water ?? "") ?? 0,
+      solar: toNumLoose(emissions?.solar ?? "") ?? 0,
     };
     const baselineYear = typeof energyYearUsed === "number" ? energyYearUsed : new Date().getFullYear() - 1;
     const nextYear = baselineYear + 1;

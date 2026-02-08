@@ -11,6 +11,7 @@ interface PlanPayload {
     electric: number;
     gas: number;
     water: number;
+    solar?: number;
   };
   categories: {
     name: string;

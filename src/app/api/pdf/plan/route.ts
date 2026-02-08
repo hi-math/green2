@@ -58,6 +58,7 @@ interface PlanPayload {
     electric: number;
     gas: number;
     water: number;
+    solar?: number; // 신재생에너지 사용량(kWh). 전기에서 차감 후 탄소배출량 산출 (3페이지와 동일)
   };
   categories: CategoryData[];
 }
