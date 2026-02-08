@@ -502,7 +502,7 @@ async function generatePDFFromScreenshot(payload: PlanPayload, request: NextRequ
       const cellPadding = 5; // 셀 내부 여백 0.5cm (5mm)
       const cellMargin = 2; // 셀 기본마진/패딩 2mm (세부 실천계획 row: 아래 여백 축소)
       const lineHeight = 6; // 줄 간격 6mm (세부 실천계획, 약 25% 축소)
-      const maxLinesPerCell = 4; // 세부 실천 계획 셀당 최대 4줄, 초과분은 다음 페이지
+      const maxLinesPerCell = 999; // 제한 없음 (규칙 단순화: 4줄 강제 분할 제거)
       const fontSize = 9; // 세부 실천계획 폰트 크기
       const detailCellContentWidth = dataColumnWidth - cellMargin * 2; // 텍스트용 너비 (좌우 각 2mm 여백)
 
