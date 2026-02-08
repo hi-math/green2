@@ -7,7 +7,7 @@
  * - 1번 테이블이 1페이지에서 끝나면 2번 테이블은 2페이지 맨 위
  */
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import "./print.css";
 import "../../globals.css";
 
@@ -228,7 +228,7 @@ async function paginatePlan(params: {
   (window as any).__PAGINATION_DONE__ = true;
 }
 
-export default function PdfPlanPage() {
+function PdfPlanPageInner() {
   const searchParams = useSearchParams();
   const [payload, setPayload] = useState<PlanPayload | null>(null);
   const [screenshotDataUrl, setScreenshotDataUrl] = useState("");
@@ -363,5 +363,13 @@ export default function PdfPlanPage() {
 
       <div id="pages-root" ref={pagesRootRef} />
     </div>
+  );
+}
+
+export default function PdfPlanPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-gray-500">데이터를 불러오는 중...</div>}>
+      <PdfPlanPageInner />
+    </Suspense>
   );
 }
