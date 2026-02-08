@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * PDF 실천계획서 템플릿: .page 단위 페이지네이션 (단순 규칙)
- * - 테이블 내용이 다음 페이지로 넘어가면 다음 페이지에 생성
- * - 한 테이블 = 4개 컬럼, 두 번째 테이블은 첫 번째 테이블 다음에 이어서
- * - 이전 테이블 뒤 여백 부족 시 두 번째 테이블은 다음 페이지로
+ * PDF 실천계획서 템플릿: .page 단위 페이지네이션
+ * - 첫 번째 테이블: 1페이지에 최대 4줄만, 그 이후는 다음 페이지로
+ * - 두 번째 테이블은 첫 테이블(연속 포함) 다음에 이어서
  */
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useRef } from "react";
 import "./print.css";
 import "../../globals.css";
+
+const MAX_LINES_FIRST_PAGE = 4;
 
 interface PlanPayload {
   schoolName: string;
@@ -24,6 +25,73 @@ function flattenItems(payload: PlanPayload): Array<{ label: string; details: str
     });
   });
   return out;
+}
+
+function splitTextByMaxLines(params: {
+  text: string;
+  sampleEl: HTMLElement;
+  maxLines: number;
+}): { head: string; tail: string } {
+  const { text, sampleEl, maxLines } = params;
+  const rawW = sampleEl.getBoundingClientRect().width;
+  const w = rawW && rawW > 20 ? rawW : 160;
+
+  const style = window.getComputedStyle(sampleEl);
+  const lineHeight = parseFloat(style.lineHeight) || 18;
+  const maxHeight = lineHeight * maxLines;
+
+  const measurer = document.createElement("div");
+  measurer.style.position = "fixed";
+  measurer.style.left = "-99999px";
+  measurer.style.top = "0";
+  measurer.style.visibility = "hidden";
+  measurer.style.width = `${w}px`;
+  measurer.style.font = style.font;
+  measurer.style.fontSize = style.fontSize;
+  measurer.style.fontFamily = style.fontFamily;
+  measurer.style.fontWeight = style.fontWeight;
+  measurer.style.lineHeight = style.lineHeight;
+  measurer.style.whiteSpace = "pre-wrap";
+  measurer.style.wordBreak = style.wordBreak || "break-word";
+  measurer.style.letterSpacing = style.letterSpacing;
+  measurer.style.padding = style.padding;
+  measurer.style.boxSizing = "border-box";
+  document.body.appendChild(measurer);
+
+  const fits = (s: string) => {
+    measurer.textContent = s;
+    return measurer.scrollHeight <= maxHeight + 0.5;
+  };
+
+  if (fits(text)) {
+    document.body.removeChild(measurer);
+    return { head: text, tail: "" };
+  }
+
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = text.slice(0, mid);
+    if (fits(candidate)) lo = mid;
+    else hi = mid - 1;
+  }
+  let cut = lo;
+  const backtrack = Math.max(
+    text.lastIndexOf(" ", lo),
+    text.lastIndexOf("\n", lo),
+    lo - 1
+  );
+  if (backtrack >= 0) cut = backtrack;
+
+  let head = text.slice(0, cut).trimEnd();
+  let tail = text.slice(cut).trimStart();
+  if (head.length === 0 && text.length > 0) {
+    document.body.removeChild(measurer);
+    return { head: text.slice(0, 1), tail: text.slice(1) };
+  }
+  document.body.removeChild(measurer);
+  return { head, tail };
 }
 
 async function paginatePlan(params: {
@@ -49,7 +117,12 @@ async function paginatePlan(params: {
     return page;
   };
 
-  // 1페이지: 헤더 + 테이블1 전체 (4컬럼). 내용이 길면 다음 페이지로 넘어가도록 확장 허용
+  const sourceTable = table1;
+  const thead = sourceTable.tHead;
+  const tbody = sourceTable.tBodies[0] || sourceTable.querySelector("tbody");
+  if (!tbody) return;
+
+  // 1페이지: 헤더 + 테이블1 (세부 실천과제는 4줄만, 나머지는 다음 페이지로)
   const page1 = makePage();
   page1.classList.add("page--continuation");
   if (sourceHeader) {
@@ -57,12 +130,67 @@ async function paginatePlan(params: {
     headerClone.removeAttribute("id");
     page1.appendChild(headerClone);
   }
-  const t1 = table1.cloneNode(true) as HTMLTableElement;
-  t1.id = "";
-  t1.classList.add("plan-table");
-  page1.appendChild(t1);
 
-  // 연속 블록: .page가 아닌 continuation-root, 페이지 분할은 브라우저에 맡김
+  const part1 = sourceTable.cloneNode(false) as HTMLTableElement;
+  part1.id = "";
+  part1.classList.add("plan-table");
+  if (thead) part1.appendChild(thead.cloneNode(true));
+  const part1Tbody = document.createElement("tbody");
+  part1.appendChild(part1Tbody);
+
+  const detailRow = tbody.rows[0] || null;
+  const tails: string[] = [];
+  if (!detailRow) {
+    page1.appendChild(part1);
+  } else {
+    const originalDetailCells = Array.from(detailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+    const part1DetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
+    const part1DetailCellsRef = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+    for (let i = 0; i < originalDetailCells.length; i++) {
+      const fullText = (originalDetailCells[i].textContent || "").trim().replace(/\r\n/g, "\n");
+      if (part1DetailCellsRef[i]) part1DetailCellsRef[i].textContent = fullText;
+    }
+    part1Tbody.appendChild(part1DetailRow);
+    page1.appendChild(part1);
+
+    const part1DetailCells = Array.from(part1DetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+    for (let i = 0; i < originalDetailCells.length; i++) {
+      const fullText = (originalDetailCells[i].textContent || "").trim().replace(/\r\n/g, "\n");
+      const sampleEl = part1DetailCells[i];
+      const { head, tail } = splitTextByMaxLines({ text: fullText, sampleEl, maxLines: MAX_LINES_FIRST_PAGE });
+      part1DetailCells[i].textContent = head;
+      tails.push(tail || "");
+    }
+  }
+
+  // 첫 테이블 4줄 초과분 → 다음 페이지에 연속 테이블 (그 이후는 4줄 제한 없음)
+  if (detailRow && tails.some((t) => t.length > 0)) {
+    const page2 = makePage();
+    page2.classList.add("page--continuation");
+    const part2 = sourceTable.cloneNode(false) as HTMLTableElement;
+    part2.id = "";
+    part2.classList.add("plan-table", "table-continuation");
+    if (thead) {
+      const contThead = thead.cloneNode(true) as HTMLTableSectionElement;
+      contThead.querySelectorAll('[data-col="label"]').forEach((el) => {
+        (el as HTMLElement).textContent = "";
+      });
+      const idxCell = contThead.querySelector('[data-col="index"]') as HTMLElement;
+      if (idxCell) idxCell.textContent = "(계속)";
+      part2.appendChild(contThead);
+    }
+    const part2Tbody = document.createElement("tbody");
+    part2.appendChild(part2Tbody);
+    const contDetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
+    const contDetailCells = Array.from(contDetailRow.querySelectorAll<HTMLElement>('[data-col="detail"]'));
+    for (let i = 0; i < contDetailCells.length; i++) {
+      contDetailCells[i].textContent = tails[i] || "";
+    }
+    part2Tbody.appendChild(contDetailRow);
+    page2.appendChild(part2);
+  }
+
+  // 두 번째 테이블: continuation-root, 페이지 분할은 브라우저에 맡김
   if (table2) {
     const continuationRoot = document.createElement("div");
     continuationRoot.className = "continuation-root";
