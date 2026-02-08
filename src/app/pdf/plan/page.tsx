@@ -162,12 +162,11 @@ async function paginatePlan(params: {
     page.appendChild(headerClone);
   }
 
-  const part1 = sourceTable.cloneNode(true) as HTMLTableElement;
+  const part1 = sourceTable.cloneNode(false) as HTMLTableElement;
   part1.id = "";
   part1.classList.add("plan-table");
-  const part1Tbody = part1.tBodies[0] || part1.createTBody();
-  part1Tbody.innerHTML = "";
   if (thead) part1.appendChild(thead.cloneNode(true));
+  const part1Tbody = document.createElement("tbody");
   part1.appendChild(part1Tbody);
 
   const detailRow = tbody.rows[0] || null;
@@ -204,11 +203,9 @@ async function paginatePlan(params: {
 
     while (restTails.some((t) => t.length > 0)) {
       page = makePage();
-      const part2 = sourceTable.cloneNode(true) as HTMLTableElement;
+      const part2 = sourceTable.cloneNode(false) as HTMLTableElement;
       part2.id = "";
       part2.classList.add("plan-table", "table-continuation");
-      const part2Tbody = part2.tBodies[0] || part2.createTBody();
-      part2Tbody.innerHTML = "";
       if (thead) {
         const contThead = thead.cloneNode(true) as HTMLTableSectionElement;
         contThead.querySelectorAll('[data-col="label"]').forEach((el) => {
@@ -218,6 +215,7 @@ async function paginatePlan(params: {
         if (idxCell) idxCell.textContent = "(계속)";
         part2.appendChild(contThead);
       }
+      const part2Tbody = document.createElement("tbody");
       part2.appendChild(part2Tbody);
 
       const contDetailRow = detailRow.cloneNode(true) as HTMLTableRowElement;
@@ -247,7 +245,7 @@ function PdfPlanPageInner() {
   const [screenshotDataUrl, setScreenshotDataUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const pagesRootRef = useRef<HTMLDivElement>(null);
-  const sourceHeaderRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const table1Ref = useRef<HTMLTableElement>(null);
   const table2Ref = useRef<HTMLTableElement>(null);
   const didPaginateRef = useRef(false);
@@ -288,7 +286,7 @@ function PdfPlanPageInner() {
     const run = async () => {
       await (document as any).fonts?.ready;
       paginatePlan({
-        sourceHeader: sourceHeaderRef.current,
+        sourceHeader: headerRef.current,
         table1: table1Ref.current,
         table2: table2Ref.current,
         pagesRoot: pagesRootRef.current,
@@ -321,8 +319,8 @@ function PdfPlanPageInner() {
 
   return (
     <div className="pdf-plan-root">
-      <div id="pdf-source" ref={sourceHeaderRef}>
-        <div id="pdf-header" className="mb-4">
+      <div id="pdf-source">
+        <div id="pdf-header" ref={headerRef} className="mb-4">
           <img src="/images/pdf/title.png" alt="" className="w-full max-w-full h-auto" style={{ maxHeight: "80px", objectFit: "contain" }} />
           <div className="text-right mt-2 text-sm font-bold" style={{ fontFamily: "Nanum Myeongjo, serif" }}>
             {schoolName}
