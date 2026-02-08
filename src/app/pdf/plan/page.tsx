@@ -283,8 +283,8 @@ function PdfPlanPageInner() {
   const schoolName = payload.schoolName || "○○학교";
 
   return (
-    <div className="pdf-plan-root">
-      <div id="pdf-source">
+    <div className="pdf-plan-root" style={{ margin: 0, padding: 0 }}>
+      <div id="pdf-source" aria-hidden="true">
         <div id="pdf-header" ref={headerRef} className="mb-4">
           <img src="/images/pdf/title.png" alt="" className="w-full max-w-full h-auto" style={{ maxHeight: "80px", objectFit: "contain" }} />
           <div className="text-right mt-2 text-sm font-bold" style={{ fontFamily: "Nanum Myeongjo, serif" }}>

@@ -1,7 +1,26 @@
-/* PDF 실천계획서: 페이지 단위 인쇄 (자동 페이지가 아닌 .page div 기준) */
+/* PDF 실천계획서: 인쇄 시 첫 페이지 정상 표시 + 테이블 길면 다음 페이지로 이어지도록 */
 @page {
   size: A4;
   margin: 0;
+}
+
+/* 인쇄 시 앱 레이아웃 영향 제거, 첫 페이지가 비지 않도록 */
+@media print {
+  body {
+    overflow: visible !important;
+    transform: none !important;
+    height: auto !important;
+    width: 210mm !important;
+  }
+  .pdf-plan-root #pdf-source {
+    display: none !important;
+  }
+  .pdf-plan-root,
+  #pages-root {
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
 }
 
 .page {
@@ -10,10 +29,16 @@
   height: 297mm;
   box-sizing: border-box;
   padding: 14mm 14mm;
-  overflow: visible; /* 2페이지(연속) tail 전체가 잘리지 않도록. 1페이지는 4줄로 제한되어 있음 */
+  overflow: visible;
   position: relative;
   break-after: page;
   page-break-after: always;
+}
+
+/* 첫 페이지가 2페이지부터 나오는 것 방지 */
+.page:first-child {
+  break-before: avoid;
+  page-break-before: avoid;
 }
 
 .page:last-child {
@@ -21,26 +46,34 @@
   page-break-after: auto;
 }
 
-/* 연속 페이지만 높이 확장: 내용이 길어도 잘리지 않도록 */
+/* 연속 페이지: 높이 확장 + 내용 길면 자동으로 다음 페이지로 이어짐 */
 .page--continuation {
   height: auto;
-  min-height: 297mm;
+  min-height: 0;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 
-/* 연속 블록: .page가 아님. 페이지 분할은 브라우저에 맡김 */
+/* 연속 블록: 테이블이 길어지면 다음 페이지에서 이어서 출력 */
 .continuation-root {
   width: 210mm;
   box-sizing: border-box;
   padding: 14mm 14mm;
   break-after: auto;
   page-break-after: auto;
+  break-inside: auto;
+  page-break-inside: auto;
+  overflow: visible;
 }
 
+/* 테이블이 길면 페이지 넘어가서 이어서 그리기 */
 .plan-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 9pt;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 
 .plan-table td,
@@ -48,6 +81,12 @@
   border: 1px solid #d1d5db;
   vertical-align: top;
   padding: 4px 5px;
+}
+
+/* 셀 안에서도 길면 다음 페이지로 넘어갈 수 있도록 (행 단위로 끊김) */
+.plan-table tr {
+  break-inside: auto;
+  page-break-inside: auto;
 }
 
 /* 연속 테이블(Part2): 상단 여백 최소화 */
