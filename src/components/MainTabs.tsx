@@ -289,13 +289,17 @@ function BasicInfoForm({
                 schoolAreaM2: schoolAreaM2 || undefined,
               });
 
-              // placeholder 저장(값은 비워두고 placeholder만 갱신)
+              // 실제 값으로 채워서 백스페이스/삭제 등 편집이 가능하도록
               setForm((s) => ({
                 ...s,
                 classCountHint: classCount || undefined,
                 studentCountHint: studentCount || undefined,
                 staffCountHint: staffCount || undefined,
                 schoolAreaM2Hint: schoolAreaM2 || undefined,
+                classCount: classCount || "",
+                studentCount: studentCount || "",
+                staffCount: staffCount || "",
+                schoolAreaM2: schoolAreaM2 || "",
               }));
 
               autoAppliedRef.current = {
@@ -319,7 +323,10 @@ function BasicInfoForm({
           maxWidthClass="max-w-[120px]"
           inputClassName="font-extrabold"
           value={form.classCount}
-          onChange={(v) => setForm((s) => ({ ...s, classCount: v }))}
+          onChange={(v) => {
+            setForm((s) => ({ ...s, classCount: v, classCountHint: v.trim() ? s.classCountHint : undefined }));
+            if (!v.trim()) setAutoPlaceholders((p) => ({ ...p, classCount: undefined }));
+          }}
           inputMode="numeric"
           disabled={!isSchoolNameFilled}
           invalid={classCountInvalid}
@@ -331,7 +338,10 @@ function BasicInfoForm({
           maxWidthClass="max-w-[120px]"
           inputClassName="font-extrabold"
           value={form.studentCount}
-          onChange={(v) => setForm((s) => ({ ...s, studentCount: v }))}
+          onChange={(v) => {
+            setForm((s) => ({ ...s, studentCount: v, studentCountHint: v.trim() ? s.studentCountHint : undefined }));
+            if (!v.trim()) setAutoPlaceholders((p) => ({ ...p, studentCount: undefined }));
+          }}
           inputMode="numeric"
           disabled={!isSchoolNameFilled}
           invalid={studentCountInvalid}
@@ -343,7 +353,10 @@ function BasicInfoForm({
           maxWidthClass="max-w-[120px]"
           inputClassName="font-extrabold"
           value={form.staffCount}
-          onChange={(v) => setForm((s) => ({ ...s, staffCount: v }))}
+          onChange={(v) => {
+            setForm((s) => ({ ...s, staffCount: v, staffCountHint: v.trim() ? s.staffCountHint : undefined }));
+            if (!v.trim()) setAutoPlaceholders((p) => ({ ...p, staffCount: undefined }));
+          }}
           inputMode="numeric"
           disabled={!isSchoolNameFilled}
           invalid={staffCountInvalid}
@@ -355,7 +368,10 @@ function BasicInfoForm({
           maxWidthClass="max-w-[120px]"
           inputClassName="font-extrabold"
           value={form.schoolAreaM2}
-          onChange={(v) => setForm((s) => ({ ...s, schoolAreaM2: v }))}
+          onChange={(v) => {
+            setForm((s) => ({ ...s, schoolAreaM2: v, schoolAreaM2Hint: v.trim() ? s.schoolAreaM2Hint : undefined }));
+            if (!v.trim()) setAutoPlaceholders((p) => ({ ...p, schoolAreaM2: undefined }));
+          }}
           inputMode="decimal"
           disabled={!isSchoolNameFilled}
           invalid={schoolAreaM2Invalid}
